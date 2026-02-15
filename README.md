@@ -44,7 +44,18 @@ Session is saved to `var/telegram.session`.
 
 ### 5. Add to Claude Code
 
-The server is configured in `~/.claude/settings.json` under `mcpServers.telegram`.
+Add to `~/.claude.json` under `mcpServers`:
+
+```json
+"telegram": {
+  "type": "stdio",
+  "command": "docker",
+  "args": [
+    "compose", "-f", "/path/to/telegram-mcp/docker-compose.yml",
+    "run", "--rm", "-i", "--no-deps", "mcp"
+  ]
+}
+```
 
 ## Usage examples
 

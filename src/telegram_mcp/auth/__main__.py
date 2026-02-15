@@ -1,4 +1,12 @@
-from telegram_mcp.auth.app import run_auth_server
+from __future__ import annotations
+
+import logging
+
+from .app import run_auth_server
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     run_auth_server()

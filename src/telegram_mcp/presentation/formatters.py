@@ -1,41 +1,64 @@
 from __future__ import annotations
 
-from ..domain.models import ChatInfo, MessageInfo
+from typing import Any
 
 
-def format_chat_list(chats: list[ChatInfo]) -> str:
-    if not chats:
-        return "No chats found."
+def format_markdown(tool_name: str, payload: dict[str, Any]) -> str:
+    if not payload.get("ok"):
+        error = payload.get("error") or {}
+        code = error.get("code", "PROVIDER_ERROR")
+        message = error.get("message", "Unknown error")
+        return f"[{tool_name}] {code}: {message}"
 
-    lines: list[str] = []
-    for c in chats:
-        handle = f" (@{c.username})" if c.username else ""
-        unread = f" [{c.unread_count} unread]" if c.unread_count else ""
-        lines.append(f"- **{c.name}**{handle} (id={c.id}, {c.type.value}){unread}")
+    data = payload.get("data")
+    if data is None:
+        return f"[{tool_name}] ok"
+
+    lines = [f"[{tool_name}] ok"]
+    if isinstance(data, dict):
+        lines.extend(_render_dict(data, indent=0))
+    elif isinstance(data, list):
+        lines.extend(_render_list(data, indent=0))
+    else:
+        lines.append(str(data))
+
+    meta = payload.get("meta") or {}
+    cursor = meta.get("cursor")
+    has_more = bool(meta.get("has_more"))
+    if has_more:
+        lines.append("has_more: true")
+    if cursor:
+        lines.append(f"cursor: {cursor}")
     return "\n".join(lines)
 
 
-def format_messages(messages: list[MessageInfo]) -> str:
-    if not messages:
-        return "No messages found."
-
+def _render_dict(value: dict[str, Any], *, indent: int) -> list[str]:
+    prefix = "  " * indent
     lines: list[str] = []
-    for m in messages:
-        ts = m.date.strftime("%Y-%m-%d %H:%M")
-        sender = m.sender or "Unknown"
-        text = m.text.replace("\n", " ") if m.text else "[no text]"
-        lines.append(f"[{ts}] {sender}: {text}")
-    return "\n".join(lines)
+    for key, item in value.items():
+        if isinstance(item, dict):
+            lines.append(f"{prefix}{key}:")
+            lines.extend(_render_dict(item, indent=indent + 1))
+        elif isinstance(item, list):
+            lines.append(f"{prefix}{key}:")
+            lines.extend(_render_list(item, indent=indent + 1))
+        else:
+            lines.append(f"{prefix}{key}: {item}")
+    return lines
 
 
-def format_search_results(messages: list[MessageInfo]) -> str:
-    if not messages:
-        return "No messages found."
-
+def _render_list(items: list[Any], *, indent: int) -> list[str]:
+    prefix = "  " * indent
     lines: list[str] = []
-    for m in messages:
-        ts = m.date.strftime("%Y-%m-%d %H:%M")
-        sender = m.sender or "Unknown"
-        text = m.text.replace("\n", " ") if m.text else "[no text]"
-        lines.append(f"[{ts}] [{m.chat_name}] {sender}: {text}")
-    return "\n".join(lines)
+    for item in items:
+        if isinstance(item, dict):
+            lines.append(f"{prefix}-")
+            lines.extend(_render_dict(item, indent=indent + 1))
+        elif isinstance(item, list):
+            lines.append(f"{prefix}-")
+            lines.extend(_render_list(item, indent=indent + 1))
+        else:
+            lines.append(f"{prefix}- {item}")
+    if not lines:
+        lines.append(f"{prefix}-")
+    return lines

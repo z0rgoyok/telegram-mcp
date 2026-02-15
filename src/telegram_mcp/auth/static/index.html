@@ -35,8 +35,6 @@
     background: #ddd;
     transition: background 0.2s;
   }
-  .step-dot.active { background: #0088cc; }
-  .step-dot.done { background: #4caf50; }
   label {
     display: block;
     font-size: 13px;
@@ -97,28 +95,24 @@
     <div class="step-dot" id="dot-4"></div>
   </div>
 
-  <!-- Step 1: Phone -->
   <div class="section visible" id="step-phone">
     <label for="phone">Phone number</label>
     <input type="tel" id="phone" placeholder="+79001234567">
     <button id="btn-send-code">Send Code</button>
   </div>
 
-  <!-- Step 2: Code -->
   <div class="section" id="step-code">
     <label for="code">Verification code from Telegram</label>
     <input type="text" id="code" placeholder="12345" inputmode="numeric">
     <button id="btn-verify">Verify</button>
   </div>
 
-  <!-- Step 3: 2FA -->
   <div class="section" id="step-2fa">
     <label for="password">Two-factor password</label>
     <input type="password" id="password" placeholder="Cloud password">
     <button id="btn-2fa">Submit</button>
   </div>
 
-  <!-- Step 4: Done -->
   <div class="section" id="step-done">
     <div class="success" id="done-message">Authenticated! You can close this page.</div>
   </div>
@@ -133,8 +127,13 @@
   function showStep(n) {
     for (let i = 1; i <= 4; i++) {
       const dot = $('dot-' + i);
-      dot.classList.toggle('active', i === n);
-      dot.classList.toggle('done', i < n);
+      if (i < n) {
+        dot.style.background = '#4caf50';
+      } else if (i === n) {
+        dot.style.background = '#0088cc';
+      } else {
+        dot.style.background = '#ddd';
+      }
     }
     ['step-phone','step-code','step-2fa','step-done'].forEach((id, idx) => {
       $(id).classList.toggle('visible', idx === n - 1);
@@ -148,6 +147,17 @@
     el.style.display = 'block';
   }
 
+  function unwrapEnvelope(json) {
+    if (!json || typeof json !== 'object') {
+      throw new Error('Invalid server response');
+    }
+    if (json.ok) {
+      return json.data || {};
+    }
+    const error = json.error || {};
+    throw new Error(error.message || 'Request failed');
+  }
+
   async function api(path, data) {
     const res = await fetch(path, {
       method: 'POST',
@@ -155,18 +165,17 @@
       body: JSON.stringify(data),
     });
     const json = await res.json();
-    if (!res.ok || json.error) throw new Error(json.error || 'Request failed');
-    return json;
+    return unwrapEnvelope(json);
   }
 
-  // Init: check status + pre-fill phone
-  fetch('/api/status').then(r => r.json()).then(data => {
-    if (data.authorized) {
+  fetch('/api/status').then(r => r.json()).then(json => {
+    const data = unwrapEnvelope(json);
+    if (data['authorized']) {
       showStep(4);
       $('done-message').textContent = 'Already authorized. You can close this page.';
     }
-    if (data.phone) $('phone').value = data.phone;
-  });
+    if (data['phone']) $('phone').value = data['phone'];
+  }).catch(e => showError(e.message));
 
   $('btn-send-code').addEventListener('click', async function() {
     this.disabled = true;
@@ -180,11 +189,11 @@
   $('btn-verify').addEventListener('click', async function() {
     this.disabled = true;
     try {
-      const res = await api('/api/sign-in', { code: $('code').value });
-      if (res['2fa_required']) {
+      const data = await api('/api/sign-in', { code: $('code').value });
+      if (data['2fa_required']) {
         showStep(3);
       } else {
-        $('done-message').textContent = 'Authenticated as ' + (res.name || 'User') + '. You can close this page.';
+        $('done-message').textContent = 'Authenticated as ' + (data.name || 'User') + '. You can close this page.';
         showStep(4);
       }
     } catch(e) { showError(e.message); }
@@ -194,14 +203,13 @@
   $('btn-2fa').addEventListener('click', async function() {
     this.disabled = true;
     try {
-      const res = await api('/api/verify-2fa', { password: $('password').value });
-      $('done-message').textContent = 'Authenticated as ' + (res.name || 'User') + '. You can close this page.';
+      const data = await api('/api/verify-2fa', { password: $('password').value });
+      $('done-message').textContent = 'Authenticated as ' + (data.name || 'User') + '. You can close this page.';
       showStep(4);
     } catch(e) { showError(e.message); }
     this.disabled = false;
   });
 
-  // Enter key submits
   $('phone').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-send-code').click(); });
   $('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-verify').click(); });
   $('password').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-2fa').click(); });

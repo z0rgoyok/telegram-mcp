@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-import sys
+import asyncio
+import logging
+from collections.abc import Awaitable
 from pathlib import Path
+from typing import cast
 
 from aiohttp import web
 from telethon import TelegramClient
@@ -10,6 +13,7 @@ from ..infrastructure.config import Settings
 from .handlers import AuthHandlers
 
 STATIC_DIR = Path(__file__).parent / "static"
+logger = logging.getLogger(__name__)
 
 
 def create_auth_app(settings: Settings) -> web.Application:
@@ -36,7 +40,7 @@ def create_auth_app(settings: Settings) -> web.Application:
     return app
 
 
-async def _serve_index(_request: web.Request) -> web.Response:
+async def _serve_index(_request: web.Request) -> web.StreamResponse:
     index_path = STATIC_DIR / "index.html"
     return web.FileResponse(index_path)
 
@@ -44,18 +48,16 @@ async def _serve_index(_request: web.Request) -> web.Response:
 async def _on_startup(app: web.Application) -> None:
     client: TelegramClient = app["client"]
     await client.connect()
-    print("Auth service: Telethon connected", file=sys.stderr)
+    logger.info("Auth service: Telethon connected")
 
 
 async def _on_cleanup(app: web.Application) -> None:
     client: TelegramClient = app["client"]
-    await client.disconnect()
-    print("Auth service: Telethon disconnected", file=sys.stderr)
+    await _maybe_await(client.disconnect())
+    logger.info("Auth service: Telethon disconnected")
 
 
 def run_auth_server() -> None:
-    import asyncio
-
     settings = Settings.from_env()
     app = create_auth_app(settings)
 
@@ -65,7 +67,7 @@ def run_auth_server() -> None:
         site = web.TCPSite(runner, host="0.0.0.0", port=8901)
 
         await site.start()
-        print("Auth UI: http://0.0.0.0:8901", file=sys.stderr)
+        logger.info("Auth UI: http://0.0.0.0:8901")
         try:
             await asyncio.Event().wait()
         finally:
@@ -74,4 +76,9 @@ def run_auth_server() -> None:
     try:
         asyncio.run(_run())
     except KeyboardInterrupt:
-        pass
+        logger.info("Auth service stopped by user")
+
+
+async def _maybe_await(value: object) -> None:
+    if hasattr(value, "__await__"):
+        await cast(Awaitable[object], value)

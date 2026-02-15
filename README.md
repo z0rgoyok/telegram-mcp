@@ -2,15 +2,72 @@
 
 Read-only MCP server for accessing your personal Telegram account from Claude Code.
 
-## What it does
+## v2 highlights
 
-Exposes 3 tools to Claude Code via MCP (stdio transport):
+- JSON-first contract for every tool.
+- Cursor-based pagination for chats/messages/search/threads.
+- Context and thread tools for fast LLM grounding.
+- Predictable error codes:
+  - `VALIDATION_ERROR`
+  - `NOT_FOUND`
+  - `UNAUTHORIZED`
+  - `RATE_LIMITED`
+  - `PROVIDER_ERROR`
 
-- **list_chats** — list your chats/channels/groups with unread counts
-- **get_messages** — read messages from a specific chat
-- **search_messages** — global or per-chat message search
+## Response contract
 
-Uses Telethon (MTProto) with your personal account — not a bot, so it can see full chat history.
+All MCP tools return:
+
+```json
+{
+  "ok": true,
+  "data": {},
+  "error": null,
+  "meta": {
+    "cursor": null,
+    "has_more": false,
+    "request_id": "..."
+  }
+}
+```
+
+For tool errors:
+
+```json
+{
+  "ok": false,
+  "data": null,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "query cannot be empty",
+    "details": {
+      "field": "query"
+    }
+  },
+  "meta": {
+    "cursor": null,
+    "has_more": false,
+    "request_id": "..."
+  }
+}
+```
+
+## Tool catalog
+
+| Tool                  | Purpose                                                               |
+|-----------------------|-----------------------------------------------------------------------|
+| `resolve_chat`        | Resolve chat candidates by query (`@username`, id, title).            |
+| `list_chats`          | List dialogs with filters, search, unread-only and cursor pagination. |
+| `list_unread_chats`   | Deterministic unread triage (`unread_count`, activity).               |
+| `get_messages`        | Read chat history with date range, search, order, cursor.             |
+| `get_message_context` | Read target message with surrounding before/after messages.           |
+| `get_thread_messages` | Read replies for a root message.                                      |
+| `search_messages`     | Global/per-chat search with sender and date filters.                  |
+| `get_chat_snapshot`   | Quick chat snapshot (`recent_messages`, optional `pinned_messages`).  |
+| `get_auth_status`     | Read-only Telegram auth status.                                       |
+| `health_check`        | Service/provider health diagnostics.                                  |
+
+Every tool accepts `format="json"` (default) or `format="markdown"`.
 
 ## Setup
 
@@ -23,8 +80,12 @@ Go to https://my.telegram.org/apps, create an app, note `api_id` and `api_hash`.
 ```bash
 cd ~/dev/tools/telegram-mcp
 cp .env.example .env
-# Edit .env: fill API_ID, API_HASH, PHONE
+# Fill API_ID, API_HASH, PHONE
 ```
+
+Optional env:
+
+- `DIALOG_SCAN_LIMIT` (default `1000`) - upper bound for dialog scanning operations.
 
 ### 3. Build
 
@@ -38,48 +99,55 @@ docker compose --profile auth build
 docker compose --profile auth run --rm --service-ports auth
 ```
 
-Open http://localhost:8901, enter your phone, the code from Telegram, and 2FA password if enabled.
-
-Session is saved to `var/telegram.session`.
+Open http://localhost:8901, enter phone, code, and 2FA password if needed.
 
 ### 5. Add to Claude Code
 
-Add to `~/.claude.json` under `mcpServers`:
-
 ```json
-"telegram": {
-  "type": "stdio",
-  "command": "docker",
-  "args": [
-    "compose", "-f", "/path/to/telegram-mcp/docker-compose.yml",
-    "run", "--rm", "-i", "--no-deps", "mcp"
-  ]
+{
+  "mcpServers": {
+    "telegram": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "compose", "-f", "/path/to/telegram-mcp/docker-compose.yml",
+        "run", "--rm", "-i", "--no-deps", "mcp"
+      ]
+    }
+  }
 }
 ```
 
-## Usage examples
-
-Once connected, ask Claude Code:
-
-- "Show my Telegram channels"
-- "What are the latest messages in @channel_name?"
-- "Search my Telegram for messages about project X"
-- "What tasks were discussed in chat Y this week?"
-
 ## Architecture
 
+```mermaid
+flowchart LR
+  MCP["presentation (MCP tools)"] --> APP["application (use-cases)"]
+  APP --> DOMAIN["domain (models, errors, ports)"]
+  APP --> INFRA["infrastructure (Telethon adapter)"]
+  AUTH["auth web UI"] --> INFRA
 ```
-domain/     — models (ChatInfo, MessageInfo) + TelegramReader protocol
-infrastructure/ — Telethon adapter + config
-presentation/   — MCP server, tools, formatters
-auth/           — standalone web service for Telegram authorization
+
+Layers:
+
+- `domain/`: entities, value objects, error model, read port.
+- `application/`: use-cases, validation, cursor codec, response envelope.
+- `infrastructure/`: Telethon-based implementation and provider error mapping.
+- `presentation/`: MCP tool exposure and markdown rendering.
+- `auth/`: web flow for authorization only.
+
+## Development and quality gates
+
+```bash
+python3 -m pip install -e .[dev]
+ruff check .
+mypy
+pytest -q
 ```
 
-## Docker services
+CI runs the same gates plus `docker compose config` smoke check.
 
-| Service | Purpose | Port |
-|---------|---------|------|
-| `mcp` | MCP stdio server (used by Claude Code) | — |
-| `auth` | Web UI for Telegram auth (on-demand) | 8901 |
+## Read-only invariant
 
-The `auth` service only runs when explicitly requested via `--profile auth`.
+This project does not expose send/edit/delete message tools.
+All MCP operations are read-only by design.

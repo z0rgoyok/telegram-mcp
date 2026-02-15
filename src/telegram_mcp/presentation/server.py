@@ -1,27 +1,37 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from functools import partial
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from ..application.executor import execute_use_case
+from ..application.responses import error_response
+from ..application.use_cases import TelegramUseCases
+from ..domain.errors import ErrorCode, ToolError
+from ..domain.ports import TelegramReader
 from ..infrastructure.config import Settings
 from ..infrastructure.telethon_adapter import TelethonAdapter
-from . import tools
+from .formatters import format_markdown
+
+logger = logging.getLogger(__name__)
 
 
 def create_server() -> FastMCP:
     settings = Settings.from_env()
-    adapter = TelethonAdapter(settings)
+    adapter_impl = TelethonAdapter(settings)
+    reader: TelegramReader = adapter_impl
+    use_cases = TelegramUseCases(reader)
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[None]:
-        await adapter.connect()
+        await adapter_impl.connect()
         try:
             yield
         finally:
-            await adapter.disconnect()
+            await adapter_impl.disconnect()
 
     mcp = FastMCP(
         "Telegram (read-only)",
@@ -29,50 +39,165 @@ def create_server() -> FastMCP:
     )
 
     @mcp.tool()
-    async def list_chats(limit: int = 50, filter: str = "all") -> str:
-        """List your Telegram chats, channels, and groups.
+    async def resolve_chat(
+        query: str,
+        limit: int = 20,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(use_cases.resolve_chat, query=query, limit=limit)
+        return _render_response("resolve_chat", payload, response_format)
 
-        Args:
-            limit: Number of chats to return (1-200, default 50).
-            filter: Filter by type: "all", "channels", "groups", "users".
-        """
-        return await tools.list_chats(adapter, limit=limit, filter=filter)
+    @mcp.tool()
+    async def list_chats(
+        chat_filter: str = "all",
+        query: str | None = None,
+        unread_only: bool = False,
+        limit: int = 50,
+        cursor: str | None = None,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.list_chats,
+            chat_filter=chat_filter,
+            query=query,
+            unread_only=unread_only,
+            limit=limit,
+            cursor=cursor,
+        )
+        return _render_response("list_chats", payload, response_format)
+
+    @mcp.tool()
+    async def list_unread_chats(
+        limit: int = 50,
+        cursor: str | None = None,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.list_unread_chats,
+            limit=limit,
+            cursor=cursor,
+        )
+        return _render_response("list_unread_chats", payload, response_format)
 
     @mcp.tool()
     async def get_messages(
-        chat_id: int | str = 0,
+        chat_id: int | str,
         limit: int = 50,
-        offset_date: str | None = None,
+        cursor: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        order: str = "desc",
         search: str | None = None,
-    ) -> str:
-        """Get messages from a Telegram chat.
-
-        Args:
-            chat_id: Chat ID (number) or @username.
-            limit: Number of messages (1-200, default 50).
-            offset_date: Only messages before this date (ISO format, e.g. "2025-01-15").
-            search: Filter messages containing this text.
-        """
-        return await tools.get_messages(
-            adapter, chat_id=chat_id, limit=limit,
-            offset_date=offset_date, search=search,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.get_messages,
+            chat_id=chat_id,
+            limit=limit,
+            cursor=cursor,
+            from_date=from_date,
+            to_date=to_date,
+            order=order,
+            search=search,
         )
+        return _render_response("get_messages", payload, response_format)
+
+    @mcp.tool()
+    async def get_message_context(
+        chat_id: int | str,
+        message_id: int,
+        before: int = 20,
+        after: int = 20,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.get_message_context,
+            chat_id=chat_id,
+            message_id=message_id,
+            before=before,
+            after=after,
+        )
+        return _render_response("get_message_context", payload, response_format)
+
+    @mcp.tool()
+    async def get_thread_messages(
+        chat_id: int | str,
+        root_message_id: int,
+        limit: int = 50,
+        cursor: str | None = None,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.get_thread_messages,
+            chat_id=chat_id,
+            root_message_id=root_message_id,
+            limit=limit,
+            cursor=cursor,
+        )
+        return _render_response("get_thread_messages", payload, response_format)
 
     @mcp.tool()
     async def search_messages(
-        query: str = "",
+        query: str,
         chat_id: int | str | None = None,
+        sender_query: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
         limit: int = 20,
-    ) -> str:
-        """Search messages globally or in a specific chat.
-
-        Args:
-            query: Search text (required).
-            chat_id: Optional chat ID or @username to limit search.
-            limit: Number of results (1-100, default 20).
-        """
-        return await tools.search_messages(
-            adapter, query=query, chat_id=chat_id, limit=limit,
+        cursor: str | None = None,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.search_messages,
+            query=query,
+            chat_id=chat_id,
+            sender_query=sender_query,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            cursor=cursor,
         )
+        return _render_response("search_messages", payload, response_format)
+
+    @mcp.tool()
+    async def get_chat_snapshot(
+        chat_id: int | str,
+        recent_limit: int = 20,
+        include_pinned: bool = True,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.get_chat_snapshot,
+            chat_id=chat_id,
+            recent_limit=recent_limit,
+            include_pinned=include_pinned,
+        )
+        return _render_response("get_chat_snapshot", payload, response_format)
+
+    @mcp.tool()
+    async def get_auth_status(response_format: str = "json") -> dict[str, Any] | str:
+        payload = await execute_use_case(use_cases.get_auth_status)
+        return _render_response("get_auth_status", payload, response_format)
+
+    @mcp.tool()
+    async def health_check(response_format: str = "json") -> dict[str, Any] | str:
+        payload = await execute_use_case(use_cases.health_check)
+        return _render_response("health_check", payload, response_format)
 
     return mcp
+
+
+def _render_response(tool_name: str, payload: dict[str, Any], response_format: str) -> dict[str, Any] | str:
+    if response_format == "json":
+        return payload
+    if response_format == "markdown":
+        return format_markdown(tool_name, payload)
+
+    invalid = error_response(
+        ToolError(
+            ErrorCode.VALIDATION_ERROR,
+            "Unsupported format",
+            {"allowed": ["json", "markdown"], "value": response_format},
+        )
+    )
+    return invalid

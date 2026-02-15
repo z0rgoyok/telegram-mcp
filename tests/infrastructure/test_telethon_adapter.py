@@ -1,0 +1,292 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from tests.conftest import load_attr
+
+ErrorCode = load_attr("telegram_mcp.domain.errors", "ErrorCode")
+MessageOrder = load_attr("telegram_mcp.domain.models", "MessageOrder")
+TimeRange = load_attr("telegram_mcp.domain.models", "TimeRange")
+Settings = load_attr("telegram_mcp.infrastructure.config", "Settings")
+TelethonAdapter = load_attr("telegram_mcp.infrastructure.telethon_adapter", "TelethonAdapter")
+
+
+@dataclass
+class FakeReply:
+    reply_to_msg_id: int
+
+
+@dataclass
+class FakeMessage:
+    id: int
+    date: datetime
+    text: str
+    chat_id: int
+    sender_id: int | None
+    sender: object | None
+    chat: object | None
+    reply_to: FakeReply | None = None
+    pinned: bool = False
+
+
+@dataclass
+class FakeDialog:
+    id: int
+    name: str
+    entity: object
+    unread_count: int
+    date: datetime
+
+
+class FakeClient:
+    def __init__(self) -> None:
+        self._connected = True
+        self._authorized = True
+
+        self.entities = {
+            1: SimpleNamespace(id=1, title="Engineering", username="eng"),
+            2: SimpleNamespace(id=2, title="Support", username="support"),
+            3: SimpleNamespace(id=3, title="Random", username="random"),
+        }
+
+        self.dialogs = [
+            FakeDialog(
+                id=1,
+                name="Engineering",
+                entity=self.entities[1],
+                unread_count=5,
+                date=datetime(2026, 1, 3, 9, 0, tzinfo=timezone.utc),
+            ),
+            FakeDialog(
+                id=2,
+                name="Support",
+                entity=self.entities[2],
+                unread_count=5,
+                date=datetime(2026, 1, 2, 9, 0, tzinfo=timezone.utc),
+            ),
+            FakeDialog(
+                id=3,
+                name="Random",
+                entity=self.entities[3],
+                unread_count=2,
+                date=datetime(2026, 1, 4, 9, 0, tzinfo=timezone.utc),
+            ),
+        ]
+
+        user_alice = SimpleNamespace(id=100, first_name="Alice", last_name="A")
+        user_bob = SimpleNamespace(id=200, first_name="Bob", last_name="B")
+
+        self.messages: dict[int, list[FakeMessage]] = {
+            1: [
+                FakeMessage(14, datetime(2026, 1, 4, 10, 0, tzinfo=timezone.utc), "task update", 1, 200, user_bob, self.entities[1]),
+                FakeMessage(13, datetime(2026, 1, 3, 10, 0, tzinfo=timezone.utc), "task started", 1, 100, user_alice, self.entities[1]),
+                FakeMessage(12, datetime(2026, 1, 2, 10, 0, tzinfo=timezone.utc), "middle", 1, 100, user_alice, self.entities[1]),
+                FakeMessage(11, datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc), "older", 1, 200, user_bob, self.entities[1]),
+                FakeMessage(10, datetime(2025, 12, 31, 10, 0, tzinfo=timezone.utc), "oldest", 1, 100, user_alice, self.entities[1]),
+                FakeMessage(20, datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc), "thread root", 1, 100, user_alice, self.entities[1], pinned=True),
+                FakeMessage(22, datetime(2026, 1, 5, 10, 2, tzinfo=timezone.utc), "thread reply 2", 1, 100, user_alice, self.entities[1], reply_to=FakeReply(20)),
+                FakeMessage(21, datetime(2026, 1, 5, 10, 1, tzinfo=timezone.utc), "thread reply 1", 1, 200, user_bob, self.entities[1], reply_to=FakeReply(20)),
+            ],
+            2: [
+                FakeMessage(31, datetime(2026, 1, 1, 11, 0, tzinfo=timezone.utc), "support task", 2, 200, user_bob, self.entities[2]),
+            ],
+            3: [],
+        }
+
+    async def connect(self) -> None:
+        self._connected = True
+
+    async def disconnect(self) -> None:
+        self._connected = False
+
+    async def is_user_authorized(self) -> bool:
+        return self._authorized
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+    async def get_me(self) -> object:
+        _ = self._authorized
+        return SimpleNamespace(id=999, first_name="Tester", last_name="User", username="tester")
+
+    async def get_entity(self, chat_id: int | str) -> object:
+        if isinstance(chat_id, str):
+            key = chat_id.strip()
+            if key.startswith("@"):
+                key = key[1:]
+            for entity in self.entities.values():
+                if getattr(entity, "username", None) == key:
+                    return entity
+            if key.lstrip("-").isdigit():
+                value = int(key)
+                if value in self.entities:
+                    return self.entities[value]
+            raise ValueError("Entity not found")
+
+        if chat_id in self.entities:
+            return self.entities[chat_id]
+        raise ValueError("Entity not found")
+
+    async def get_messages(self, entity: Any, ids: int) -> FakeMessage | None:
+        chat_id = entity.id
+        for message in self.messages.get(chat_id, []):
+            if message.id == ids:
+                return message
+        return None
+
+    async def iter_dialogs(self, limit: int) -> Any:
+        for dialog in self.dialogs[:limit]:
+            yield dialog
+
+    async def iter_messages(self, entity: Any | None, **kwargs: Any) -> Any:
+        if entity is None:
+            pool = [message for values in self.messages.values() for message in values]
+        else:
+            pool = list(self.messages.get(entity.id, []))
+
+        search = kwargs.get("search")
+        if search:
+            text = str(search).casefold()
+            pool = [item for item in pool if text in item.text.casefold()]
+
+        reply_to = kwargs.get("reply_to")
+        if reply_to is not None:
+            pool = [
+                item
+                for item in pool
+                if item.reply_to is not None and item.reply_to.reply_to_msg_id == int(reply_to)
+            ]
+
+        message_filter = kwargs.get("filter")
+        if message_filter is not None:
+            pool = [item for item in pool if item.pinned]
+
+        offset_date = kwargs.get("offset_date")
+        if isinstance(offset_date, datetime):
+            pool = [item for item in pool if item.date <= offset_date]
+
+        offset_id = kwargs.get("offset_id")
+        if isinstance(offset_id, int):
+            pool = [item for item in pool if item.id < offset_id]
+
+        min_id = kwargs.get("min_id")
+        if isinstance(min_id, int):
+            pool = [item for item in pool if item.id > min_id]
+
+        reverse = bool(kwargs.get("reverse", False))
+        pool.sort(key=lambda item: item.id, reverse=not reverse)
+
+        limit = int(kwargs.get("limit", len(pool)))
+        for message in pool[:limit]:
+            yield message
+
+
+@pytest.fixture
+def adapter() -> Any:
+    settings = Settings(
+        api_id=1,
+        api_hash="hash",
+        phone="+10000000000",
+        session_path=Path("var/telegram"),
+        dialog_scan_limit=100,
+    )
+    instance = TelethonAdapter(settings)
+    instance._client = FakeClient()
+    return instance
+
+
+@pytest.mark.asyncio
+async def test_list_unread_dialogs_sorted_deterministically(adapter: Any) -> None:
+    page = await adapter.list_unread_dialogs(limit=10, offset=0)
+
+    assert [chat.id for chat in page.items] == [1, 2, 3]
+    assert page.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_get_messages_supports_pagination(adapter: Any) -> None:
+    page = await adapter.get_messages(chat_id=1, limit=2)
+
+    assert [message.id for message in page.items] == [22, 21]
+    assert page.has_more is True
+    assert page.next_offset == 21
+
+
+@pytest.mark.asyncio
+async def test_get_message_context_returns_ordered_neighbours(adapter: Any) -> None:
+    context = await adapter.get_message_context(chat_id=1, message_id=12, before=2, after=2)
+
+    assert [message.id for message in context.before] == [10, 11]
+    assert context.target.id == 12
+    assert [message.id for message in context.after] == [13, 14]
+
+
+@pytest.mark.asyncio
+async def test_get_thread_messages_returns_root_and_replies(adapter: Any) -> None:
+    thread = await adapter.get_thread_messages(chat_id=1, root_message_id=20, limit=10)
+
+    assert thread.root.id == 20
+    assert [message.id for message in thread.page.items] == [22, 21]
+
+
+@pytest.mark.asyncio
+async def test_search_messages_filters_sender_and_time_range(adapter: Any) -> None:
+    page = await adapter.search_messages(
+        query="task",
+        sender_query="bob",
+        limit=10,
+        time_range=TimeRange(
+            from_date=datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
+            to_date=datetime(2026, 1, 31, 0, 0, tzinfo=timezone.utc),
+        ),
+    )
+
+    assert [message.id for message in page.items] == [31, 14]
+
+
+def test_map_error_to_unauthorized_code(adapter: Any) -> None:
+    class UnauthorizedError(Exception):
+        pass
+
+    mapped = adapter._map_error(UnauthorizedError("bad session"))
+
+    assert mapped.code == ErrorCode.UNAUTHORIZED
+
+
+def test_map_error_to_rate_limited_code(adapter: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeFloodWaitError(Exception):
+        def __init__(self, seconds: int) -> None:
+            super().__init__("wait")
+            self.seconds = seconds
+
+    monkeypatch.setattr(
+        "telegram_mcp.infrastructure.telethon_adapter.FloodWaitError",
+        FakeFloodWaitError,
+    )
+
+    mapped = adapter._map_error(FakeFloodWaitError(12))
+
+    assert mapped.code == ErrorCode.RATE_LIMITED
+    assert mapped.details == {"retry_after_seconds": 12}
+
+
+@pytest.mark.asyncio
+async def test_health_check_reports_ok(adapter: Any) -> None:
+    status = await adapter.health_check()
+
+    assert status.status == "ok"
+    assert status.connected is True
+    assert status.authorized is True
+
+
+@pytest.mark.asyncio
+async def test_get_messages_with_ascending_order(adapter: Any) -> None:
+    page = await adapter.get_messages(chat_id=1, limit=3, order=MessageOrder.ASC)
+
+    assert [message.id for message in page.items] == [20, 21, 22]

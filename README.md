@@ -31,6 +31,8 @@ All MCP tools return:
 }
 ```
 
+Important: use `--service-ports` for `mcp`. Without published port `8902`, `get_message_media` proxy URLs will be unreachable.
+
 For tool errors:
 
 ```json

@@ -1,4 +1,3 @@
-# noinspection YAMLSchemaValidation
 name: CI
 
 on:
@@ -38,6 +37,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Prepare env file
+        run: cp .env.example .env
 
       - name: Docker Compose config
         run: docker compose config

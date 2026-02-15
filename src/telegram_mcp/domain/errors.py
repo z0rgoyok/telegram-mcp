@@ -20,4 +20,4 @@ class ToolError(Exception):
     details: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
-        super().__init__(self.message)
+        Exception.__init__(self, self.message)

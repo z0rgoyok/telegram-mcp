@@ -54,7 +54,24 @@ async def _on_cleanup(app: web.Application) -> None:
 
 
 def run_auth_server() -> None:
+    import asyncio
+
     settings = Settings.from_env()
     app = create_auth_app(settings)
-    print("Auth UI: http://0.0.0.0:8901", file=sys.stderr)
-    web.run_app(app, host="0.0.0.0", port=8901, print=None)
+
+    async def _run() -> None:
+        runner = web.AppRunner(app, max_field_size=16384)
+        await runner.setup()
+        site = web.TCPSite(runner, host="0.0.0.0", port=8901)
+
+        await site.start()
+        print("Auth UI: http://0.0.0.0:8901", file=sys.stderr)
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await runner.cleanup()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass

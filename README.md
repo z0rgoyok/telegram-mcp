@@ -29,13 +29,13 @@ cp .env.example .env
 ### 3. Build
 
 ```bash
-docker compose build
+docker compose --profile auth build
 ```
 
 ### 4. Authenticate
 
 ```bash
-docker compose --profile auth run --rm auth
+docker compose --profile auth run --rm --service-ports auth
 ```
 
 Open http://localhost:8901, enter your phone, the code from Telegram, and 2FA password if enabled.

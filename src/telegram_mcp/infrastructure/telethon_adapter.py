@@ -28,7 +28,7 @@ class TelethonAdapter:
             raise RuntimeError(
                 "Telegram session not authorized. "
                 "Run the auth service first: "
-                "docker compose --profile auth run --rm auth"
+                "docker compose --profile auth run --rm --service-ports auth"
             )
         me = await self._client.get_me()
         print(f"Connected as {me.first_name} (id={me.id})", file=sys.stderr)

@@ -1,0 +1,21 @@
+[project]
+name = "telegram-mcp"
+version = "0.1.0"
+description = "Read-only Telegram MCP server for Claude Code"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.26",
+    "telethon>=1.37",
+    "aiohttp>=3.11",
+    "cryptg>=0.4",
+]
+
+[project.scripts]
+telegram-mcp = "telegram_mcp.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telegram Auth</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f0f2f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    color: #1a1a1a;
+  }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    padding: 40px;
+    width: 100%;
+    max-width: 400px;
+  }
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  .steps {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+  .step-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #ddd;
+    transition: background 0.2s;
+  }
+  .step-dot.active { background: #0088cc; }
+  .step-dot.done { background: #4caf50; }
+  label {
+    display: block;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 6px;
+    margin-top: 16px;
+  }
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 16px;
+    outline: none;
+    transition: border 0.2s;
+  }
+  input:focus { border-color: #0088cc; }
+  button {
+    width: 100%;
+    margin-top: 20px;
+    padding: 12px;
+    background: #0088cc;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .error {
+    margin-top: 12px;
+    padding: 10px;
+    background: #ffeaea;
+    color: #c0392b;
+    border-radius: 8px;
+    font-size: 14px;
+    display: none;
+  }
+  .success {
+    text-align: center;
+    color: #4caf50;
+    font-size: 18px;
+    margin-top: 16px;
+  }
+  .section { display: none; }
+  .section.visible { display: block; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Telegram Auth</h1>
+  <div class="steps">
+    <div class="step-dot active" id="dot-1"></div>
+    <div class="step-dot" id="dot-2"></div>
+    <div class="step-dot" id="dot-3"></div>
+    <div class="step-dot" id="dot-4"></div>
+  </div>
+
+  <!-- Step 1: Phone -->
+  <div class="section visible" id="step-phone">
+    <label for="phone">Phone number</label>
+    <input type="tel" id="phone" placeholder="+79001234567">
+    <button id="btn-send-code">Send Code</button>
+  </div>
+
+  <!-- Step 2: Code -->
+  <div class="section" id="step-code">
+    <label for="code">Verification code from Telegram</label>
+    <input type="text" id="code" placeholder="12345" inputmode="numeric">
+    <button id="btn-verify">Verify</button>
+  </div>
+
+  <!-- Step 3: 2FA -->
+  <div class="section" id="step-2fa">
+    <label for="password">Two-factor password</label>
+    <input type="password" id="password" placeholder="Cloud password">
+    <button id="btn-2fa">Submit</button>
+  </div>
+
+  <!-- Step 4: Done -->
+  <div class="section" id="step-done">
+    <div class="success" id="done-message">Authenticated! You can close this page.</div>
+  </div>
+
+  <div class="error" id="error"></div>
+</div>
+
+<script>
+(function() {
+  const $ = id => document.getElementById(id);
+
+  function showStep(n) {
+    for (let i = 1; i <= 4; i++) {
+      const dot = $('dot-' + i);
+      dot.classList.toggle('active', i === n);
+      dot.classList.toggle('done', i < n);
+    }
+    ['step-phone','step-code','step-2fa','step-done'].forEach((id, idx) => {
+      $(id).classList.toggle('visible', idx === n - 1);
+    });
+    $('error').style.display = 'none';
+  }
+
+  function showError(msg) {
+    const el = $('error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  async function api(path, data) {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || 'Request failed');
+    return json;
+  }
+
+  // Init: check status + pre-fill phone
+  fetch('/api/status').then(r => r.json()).then(data => {
+    if (data.authorized) {
+      showStep(4);
+      $('done-message').textContent = 'Already authorized. You can close this page.';
+    }
+    if (data.phone) $('phone').value = data.phone;
+  });
+
+  $('btn-send-code').addEventListener('click', async function() {
+    this.disabled = true;
+    try {
+      await api('/api/send-code', { phone: $('phone').value });
+      showStep(2);
+    } catch(e) { showError(e.message); }
+    this.disabled = false;
+  });
+
+  $('btn-verify').addEventListener('click', async function() {
+    this.disabled = true;
+    try {
+      const res = await api('/api/sign-in', { code: $('code').value });
+      if (res['2fa_required']) {
+        showStep(3);
+      } else {
+        $('done-message').textContent = 'Authenticated as ' + (res.name || 'User') + '. You can close this page.';
+        showStep(4);
+      }
+    } catch(e) { showError(e.message); }
+    this.disabled = false;
+  });
+
+  $('btn-2fa').addEventListener('click', async function() {
+    this.disabled = true;
+    try {
+      const res = await api('/api/verify-2fa', { password: $('password').value });
+      $('done-message').textContent = 'Authenticated as ' + (res.name || 'User') + '. You can close this page.';
+      showStep(4);
+    } catch(e) { showError(e.message); }
+    this.disabled = false;
+  });
+
+  // Enter key submits
+  $('phone').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-send-code').click(); });
+  $('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-verify').click(); });
+  $('password').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-2fa').click(); });
+})();
+</script>
+</body>
+</html>

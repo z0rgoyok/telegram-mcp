@@ -41,6 +41,28 @@ class ContractReader:
             has_more=False,
         )
 
+    async def list_my_sent_chats(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        time_range: Any,
+    ) -> Any:
+        self._touch += 1
+        _ = (limit, offset, time_range)
+        return models.Page(
+            items=[
+                models.ChatActivity(
+                    chat_id=1,
+                    chat_name="A",
+                    my_messages_count=1,
+                    last_my_message_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                    last_my_message_id=1,
+                )
+            ],
+            has_more=False,
+        )
+
     async def resolve_chat(self, *, query: str, limit: int = 20) -> list[Any]:
         self._touch += 1
         _ = (query, limit)
@@ -111,7 +133,7 @@ class ContractReader:
     async def search_messages(
         self,
         *,
-        query: str,
+        query: str | None = None,
         chat_id: int | str | None = None,
         sender_query: str | None = None,
         limit: int = 20,
@@ -120,6 +142,19 @@ class ContractReader:
     ) -> Any:
         self._touch += 1
         _ = (query, chat_id, sender_query, limit, offset_id, time_range)
+        return await self.get_messages(chat_id=1)
+
+    async def search_mentions_to_me(
+        self,
+        *,
+        mention: str,
+        chat_id: int | str | None = None,
+        limit: int = 20,
+        offset_id: int | None = None,
+        time_range: Any = None,
+    ) -> Any:
+        self._touch += 1
+        _ = (mention, chat_id, limit, offset_id, time_range)
         return await self.get_messages(chat_id=1)
 
     async def get_chat_snapshot(
@@ -183,10 +218,15 @@ async def test_json_contract_for_all_tools() -> None:
         await execute_use_case(use_cases.resolve_chat, query="A"),
         await execute_use_case(use_cases.list_chats),
         await execute_use_case(use_cases.list_unread_chats),
+        await execute_use_case(
+            use_cases.list_my_sent_chats,
+            from_date="2026-01-01T00:00:00Z",
+        ),
         await execute_use_case(use_cases.get_messages, chat_id=1),
         await execute_use_case(use_cases.get_message_context, chat_id=1, message_id=1),
         await execute_use_case(use_cases.get_thread_messages, chat_id=1, root_message_id=1),
         await execute_use_case(use_cases.search_messages, query="hello"),
+        await execute_use_case(use_cases.search_mentions_to_me, mention="@tester"),
         await execute_use_case(use_cases.get_chat_snapshot, chat_id=1),
         await execute_use_case(use_cases.get_message_media, chat_id=1, message_id=1),
         await execute_use_case(use_cases.get_auth_status),

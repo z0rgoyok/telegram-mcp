@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..domain.errors import ErrorCode, ToolError
 from ..domain.ports import TelegramReader
 from .cursor import (
     decode_message_cursor,
@@ -12,6 +13,7 @@ from .cursor import (
 from .responses import success_response
 from .serializers import (
     auth_status_to_dict,
+    chat_activity_to_dict,
     chat_ref_to_dict,
     context_to_dict,
     health_to_dict,
@@ -96,6 +98,40 @@ class TelegramUseCases:
         return success_response(
             {
                 "items": [chat_ref_to_dict(chat) for chat in page.items],
+                "count": len(page.items),
+            },
+            cursor=next_cursor,
+            has_more=page.has_more,
+        )
+
+    async def list_my_sent_chats(
+        self,
+        *,
+        limit: int = 50,
+        cursor: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
+        offset = decode_offset_cursor(cursor)
+        time_range = parse_time_range(from_date=from_date, to_date=to_date)
+
+        if time_range is None or time_range.from_date is None:
+            raise ToolError(
+                ErrorCode.VALIDATION_ERROR,
+                "from_date is required",
+                {"field": "from_date"},
+            )
+
+        page = await self._reader.list_my_sent_chats(
+            limit=normalized_limit,
+            offset=offset,
+            time_range=time_range,
+        )
+        next_cursor = encode_offset_cursor(page.next_offset) if page.next_offset is not None else None
+        return success_response(
+            {
+                "items": [chat_activity_to_dict(activity) for activity in page.items],
                 "count": len(page.items),
             },
             cursor=next_cursor,
@@ -197,7 +233,7 @@ class TelegramUseCases:
     async def search_messages(
         self,
         *,
-        query: str,
+        query: str | None = None,
         chat_id: int | str | None = None,
         sender_query: str | None = None,
         from_date: str | None = None,
@@ -205,7 +241,7 @@ class TelegramUseCases:
         limit: int = 20,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        normalized_query = require_text(query, "query")
+        normalized_query = query.strip() if isinstance(query, str) and query.strip() else None
         normalized_chat_id = parse_chat_id(chat_id) if chat_id is not None else None
         normalized_sender_query = (
             sender_query.strip()
@@ -230,6 +266,57 @@ class TelegramUseCases:
         return success_response(
             {
                 "query": normalized_query,
+                "items": [message_to_dict(message) for message in page.items],
+                "count": len(page.items),
+            },
+            cursor=next_cursor,
+            has_more=page.has_more,
+        )
+
+    async def search_mentions_to_me(
+        self,
+        *,
+        mention: str | None = None,
+        chat_id: int | str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_chat_id = parse_chat_id(chat_id) if chat_id is not None else None
+        normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
+        offset_id = decode_message_cursor(cursor)
+        time_range = parse_time_range(from_date=from_date, to_date=to_date)
+        normalized_mention = _normalize_mention(mention)
+
+        if normalized_mention is None:
+            auth_status = await self._reader.get_auth_status()
+            if auth_status.username is None:
+                raise ToolError(
+                    ErrorCode.VALIDATION_ERROR,
+                    "mention is required when Telegram username is not set",
+                    {"field": "mention"},
+                )
+            normalized_mention = _normalize_mention(auth_status.username)
+            if normalized_mention is None:
+                raise ToolError(
+                    ErrorCode.VALIDATION_ERROR,
+                    "mention is required when Telegram username is not set",
+                    {"field": "mention"},
+                )
+
+        page = await self._reader.search_mentions_to_me(
+            mention=normalized_mention,
+            chat_id=normalized_chat_id,
+            limit=normalized_limit,
+            offset_id=offset_id,
+            time_range=time_range,
+        )
+
+        next_cursor = encode_message_cursor(page.next_offset) if page.next_offset is not None else None
+        return success_response(
+            {
+                "mention": normalized_mention,
                 "items": [message_to_dict(message) for message in page.items],
                 "count": len(page.items),
             },
@@ -282,3 +369,18 @@ class TelegramUseCases:
     async def health_check(self) -> dict[str, Any]:
         status = await self._reader.health_check()
         return success_response(health_to_dict(status))
+
+
+def _normalize_mention(mention: str | None) -> str | None:
+    if not isinstance(mention, str) or not mention.strip():
+        return None
+
+    trimmed = mention.strip()
+    username = trimmed[1:] if trimmed.startswith("@") else trimmed
+    if not username:
+        raise ToolError(
+            ErrorCode.VALIDATION_ERROR,
+            "mention cannot be empty",
+            {"field": "mention"},
+        )
+    return f"@{username}"

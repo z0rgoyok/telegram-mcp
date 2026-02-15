@@ -50,6 +50,29 @@ class StubReader:
         self._touch += 1
         return await self.list_dialogs(limit=limit, offset=offset)
 
+    async def list_my_sent_chats(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        time_range: Any,
+    ) -> Any:
+        self._touch += 1
+        _ = (limit, offset, time_range)
+        return models.Page(
+            items=[
+                models.ChatActivity(
+                    chat_id=1,
+                    chat_name="Engineering",
+                    my_messages_count=2,
+                    last_my_message_date=datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc),
+                    last_my_message_id=101,
+                )
+            ],
+            has_more=False,
+            next_offset=None,
+        )
+
     async def resolve_chat(self, *, query: str, limit: int = 20) -> list[Any]:
         self._touch += 1
         _ = (query, limit)
@@ -138,7 +161,7 @@ class StubReader:
     async def search_messages(
         self,
         *,
-        query: str,
+        query: str | None = None,
         chat_id: int | str | None = None,
         sender_query: str | None = None,
         limit: int = 20,
@@ -147,6 +170,19 @@ class StubReader:
     ) -> Any:
         self._touch += 1
         _ = (query, chat_id, sender_query, offset_id, time_range)
+        return await self.get_messages(chat_id=1, limit=limit)
+
+    async def search_mentions_to_me(
+        self,
+        *,
+        mention: str,
+        chat_id: int | str | None = None,
+        limit: int = 20,
+        offset_id: int | None = None,
+        time_range: Any = None,
+    ) -> Any:
+        self._touch += 1
+        _ = (mention, chat_id, limit, offset_id, time_range)
         return await self.get_messages(chat_id=1, limit=limit)
 
     async def get_chat_snapshot(
@@ -203,13 +239,13 @@ class StubReader:
 
 
 @pytest.mark.asyncio
-async def test_search_messages_empty_query_returns_validation_error() -> None:
+async def test_search_messages_empty_query_is_treated_as_wildcard() -> None:
     use_cases = TelegramUseCases(StubReader())
 
     response = await execute_use_case(use_cases.search_messages, query="   ")
 
-    assert response["ok"] is False
-    assert response["error"]["code"] == ErrorCode.VALIDATION_ERROR.value
+    assert response["ok"] is True
+    assert response["data"]["query"] is None
 
 
 @pytest.mark.asyncio
@@ -281,3 +317,23 @@ async def test_get_message_media_returns_payload() -> None:
     assert response["data"]["kind"] == "photo"
     assert response["data"]["content_url"] == "http://proxy.local/media/token"
     assert response["data"]["url_source"] == "proxy"
+
+
+@pytest.mark.asyncio
+async def test_list_my_sent_chats_requires_from_date() -> None:
+    use_cases = TelegramUseCases(StubReader())
+
+    response = await execute_use_case(use_cases.list_my_sent_chats)
+
+    assert response["ok"] is False
+    assert response["error"]["code"] == ErrorCode.VALIDATION_ERROR.value
+
+
+@pytest.mark.asyncio
+async def test_search_mentions_to_me_uses_auth_username_when_not_passed() -> None:
+    use_cases = TelegramUseCases(StubReader())
+
+    response = await execute_use_case(use_cases.search_mentions_to_me)
+
+    assert response["ok"] is True
+    assert response["data"]["mention"] == "@alice"

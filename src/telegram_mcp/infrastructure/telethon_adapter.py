@@ -8,6 +8,7 @@ from telethon.errors import FloodWaitError, RPCError
 from ..domain.errors import ErrorCode, ToolError
 from ..domain.models import (
     AuthStatus,
+    ChatActivity,
     ChatFilter,
     ChatRef,
     ChatSnapshot,
@@ -22,15 +23,9 @@ from ..domain.models import (
 )
 from ..domain.ports import TelegramReader
 from .config import Settings
-from .telethon_chat_ops import (
-    list_dialogs as list_dialogs_op,
-)
-from .telethon_chat_ops import (
-    list_unread_dialogs as list_unread_dialogs_op,
-)
-from .telethon_chat_ops import (
-    resolve_chat as resolve_chat_op,
-)
+from .telethon_chat_ops import list_dialogs as list_dialogs_op
+from .telethon_chat_ops import list_unread_dialogs as list_unread_dialogs_op
+from .telethon_chat_ops import resolve_chat as resolve_chat_op
 from .telethon_helpers import maybe_await
 from .telethon_message_ops import (
     get_chat_snapshot as get_chat_snapshot_op,
@@ -46,6 +41,12 @@ from .telethon_message_ops import (
 )
 from .telethon_message_ops import (
     get_thread_messages as get_thread_messages_op,
+)
+from .telethon_message_ops import (
+    list_my_sent_chats as list_my_sent_chats_op,
+)
+from .telethon_message_ops import (
+    search_mentions_to_me as search_mentions_to_me_op,
 )
 from .telethon_message_ops import (
     search_messages as search_messages_op,
@@ -150,6 +151,23 @@ class TelethonAdapter(TelegramReader):
         except Exception as exc:
             raise self._map_error(exc) from exc
 
+    async def list_my_sent_chats(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        time_range: TimeRange,
+    ) -> Page[ChatActivity]:
+        try:
+            return await list_my_sent_chats_op(
+                self._client,
+                limit=limit,
+                offset=offset,
+                time_range=time_range,
+            )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
     async def get_messages(
         self,
         *,
@@ -214,7 +232,7 @@ class TelethonAdapter(TelegramReader):
     async def search_messages(
         self,
         *,
-        query: str,
+        query: str | None = None,
         chat_id: int | str | None = None,
         sender_query: str | None = None,
         limit: int = 20,
@@ -227,6 +245,27 @@ class TelethonAdapter(TelegramReader):
                 query=query,
                 chat_id=chat_id,
                 sender_query=sender_query,
+                limit=limit,
+                offset_id=offset_id,
+                time_range=time_range,
+            )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
+    async def search_mentions_to_me(
+        self,
+        *,
+        mention: str,
+        chat_id: int | str | None = None,
+        limit: int = 20,
+        offset_id: int | None = None,
+        time_range: TimeRange | None = None,
+    ) -> Page[MessageInfo]:
+        try:
+            return await search_mentions_to_me_op(
+                self._client,
+                mention=mention,
+                chat_id=chat_id,
                 limit=limit,
                 offset_id=offset_id,
                 time_range=time_range,

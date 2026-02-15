@@ -91,6 +91,12 @@ def parse_chat_id(value: int | str | None) -> int | str:
 
 def parse_iso_datetime(value: str, field_name: str) -> datetime:
     normalized = value.strip()
+    if "T" not in normalized:
+        raise ToolError(
+            ErrorCode.VALIDATION_ERROR,
+            f"{field_name} must be ISO8601 datetime with time",
+            {"field": field_name, "value": value},
+        )
     if normalized.endswith("Z"):
         normalized = normalized[:-1] + "+00:00"
     try:

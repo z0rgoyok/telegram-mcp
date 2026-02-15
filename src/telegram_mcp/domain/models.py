@@ -91,6 +91,15 @@ class ChatRef:
 
 
 @dataclass(frozen=True, slots=True)
+class ChatActivity:
+    chat_id: int
+    chat_name: str
+    my_messages_count: int
+    last_my_message_date: datetime
+    last_my_message_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class MessageInfo:
     id: int
     date: datetime

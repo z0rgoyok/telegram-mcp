@@ -86,6 +86,23 @@ def create_server() -> FastMCP:
         return _render_response("list_unread_chats", payload, response_format)
 
     @mcp.tool()
+    async def list_my_sent_chats(
+        limit: int = 50,
+        cursor: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.list_my_sent_chats,
+            limit=limit,
+            cursor=cursor,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return _render_response("list_my_sent_chats", payload, response_format)
+
+    @mcp.tool()
     async def get_messages(
         chat_id: int | str,
         limit: int = 50,
@@ -144,7 +161,7 @@ def create_server() -> FastMCP:
 
     @mcp.tool()
     async def search_messages(
-        query: str,
+        query: str | None = None,
         chat_id: int | str | None = None,
         sender_query: str | None = None,
         from_date: str | None = None,
@@ -164,6 +181,27 @@ def create_server() -> FastMCP:
             cursor=cursor,
         )
         return _render_response("search_messages", payload, response_format)
+
+    @mcp.tool()
+    async def search_mentions_to_me(
+        mention: str | None = None,
+        chat_id: int | str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.search_mentions_to_me,
+            mention=mention,
+            chat_id=chat_id,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            cursor=cursor,
+        )
+        return _render_response("search_mentions_to_me", payload, response_format)
 
     @mcp.tool()
     async def get_chat_snapshot(

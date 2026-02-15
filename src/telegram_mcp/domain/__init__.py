@@ -1,6 +1,7 @@
 from .errors import ErrorCode, ToolError
 from .models import (
     AuthStatus,
+    ChatActivity,
     ChatFilter,
     ChatInfo,
     ChatRef,
@@ -22,6 +23,7 @@ from .models import (
 
 __all__ = [
     "AuthStatus",
+    "ChatActivity",
     "ChatFilter",
     "ChatInfo",
     "ChatRef",

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from telethon import functions, types
 
 from tests.conftest import load_attr
 
@@ -105,6 +106,7 @@ class FakeClient:
         self.messages: dict[int, list[FakeMessage]] = {
             1: [
                 FakeMessage(14, datetime(2026, 1, 4, 10, 0, tzinfo=timezone.utc), "task update", 1, 200, user_bob, self.entities[1]),
+                FakeMessage(15, datetime(2026, 1, 4, 9, 0, tzinfo=timezone.utc), "please check @tester later", 1, 200, user_bob, self.entities[1]),
                 FakeMessage(13, datetime(2026, 1, 3, 10, 0, tzinfo=timezone.utc), "task started", 1, 100, user_alice, self.entities[1]),
                 FakeMessage(12, datetime(2026, 1, 2, 10, 0, tzinfo=timezone.utc), "middle", 1, 100, user_alice, self.entities[1]),
                 FakeMessage(11, datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc), "older", 1, 200, user_bob, self.entities[1]),
@@ -151,7 +153,7 @@ class FakeClient:
 
     async def get_me(self) -> object:
         _ = self._authorized
-        return SimpleNamespace(id=999, first_name="Tester", last_name="User", username="tester")
+        return SimpleNamespace(id=100, first_name="Tester", last_name="User", username="tester")
 
     async def get_entity(self, chat_id: int | str) -> object:
         if isinstance(chat_id, str):
@@ -169,6 +171,11 @@ class FakeClient:
 
         if chat_id in self.entities:
             return self.entities[chat_id]
+        raise ValueError("Entity not found")
+
+    async def get_input_entity(self, entity: Any) -> Any:
+        if hasattr(entity, "id") and isinstance(entity.id, int):
+            return types.InputPeerUser(user_id=entity.id, access_hash=0)
         raise ValueError("Entity not found")
 
     async def get_messages(self, entity: Any, ids: int) -> FakeMessage | None:
@@ -223,6 +230,37 @@ class FakeClient:
         limit = int(kwargs.get("limit", len(pool)))
         for message in pool[:limit]:
             yield message
+
+    async def __call__(self, request: Any) -> Any:
+        if isinstance(request, functions.messages.SearchRequest):
+            pool = [message for values in self.messages.values() for message in values]
+
+            from_user_id = request.from_id.user_id if hasattr(request.from_id, "user_id") else None
+            if isinstance(from_user_id, int):
+                pool = [message for message in pool if message.sender_id == from_user_id]
+
+            if isinstance(request.max_date, datetime):
+                pool = [message for message in pool if message.date <= request.max_date]
+            if isinstance(request.min_date, datetime):
+                pool = [message for message in pool if message.date >= request.min_date]
+            if isinstance(request.offset_id, int) and request.offset_id > 0:
+                pool = [message for message in pool if message.id < request.offset_id]
+
+            pool.sort(key=lambda message: message.id, reverse=True)
+            limit = int(request.limit) if isinstance(request.limit, int) and request.limit > 0 else len(pool)
+            selected = pool[:limit]
+            messages = [
+                SimpleNamespace(
+                    id=item.id,
+                    date=item.date,
+                    peer_id=types.PeerUser(user_id=item.chat_id),
+                    from_id=types.PeerUser(user_id=item.sender_id) if item.sender_id is not None else None,
+                )
+                for item in selected
+            ]
+            return SimpleNamespace(messages=messages, users=[], chats=[])
+
+        raise AssertionError(f"Unsupported request type: {type(request).__name__}")
 
     async def download_media(self, message: Any, file: Any = None) -> bytes:
         _ = self
@@ -299,6 +337,36 @@ async def test_search_messages_filters_sender_and_time_range(adapter: Any) -> No
     )
 
     assert [message.id for message in page.items] == [31, 14]
+
+
+@pytest.mark.asyncio
+async def test_search_messages_accepts_empty_query_as_wildcard(adapter: Any) -> None:
+    page = await adapter.search_messages(query=None, limit=3)
+
+    assert [message.id for message in page.items] == [31, 23, 22]
+
+
+@pytest.mark.asyncio
+async def test_list_my_sent_chats_returns_aggregated_activity(adapter: Any) -> None:
+    page = await adapter.list_my_sent_chats(
+        limit=10,
+        offset=0,
+        time_range=TimeRange(
+            from_date=datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
+            to_date=datetime(2026, 1, 5, 23, 59, tzinfo=timezone.utc),
+        ),
+    )
+
+    assert len(page.items) == 1
+    assert page.items[0].chat_id == 1
+    assert page.items[0].my_messages_count == 4
+
+
+@pytest.mark.asyncio
+async def test_search_mentions_to_me_finds_mentions_in_message_text(adapter: Any) -> None:
+    page = await adapter.search_mentions_to_me(mention="@tester", limit=10)
+
+    assert [message.id for message in page.items] == [15]
 
 
 def test_map_error_to_unauthorized_code(adapter: Any) -> None:

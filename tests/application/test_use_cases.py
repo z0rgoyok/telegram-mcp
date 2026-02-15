@@ -73,6 +73,30 @@ class StubReader:
             next_offset=None,
         )
 
+    async def list_mentions_to_me_chats(
+        self,
+        *,
+        mention: str,
+        limit: int = 50,
+        offset: int = 0,
+        time_range: Any = None,
+    ) -> Any:
+        self._touch += 1
+        _ = (mention, limit, offset, time_range)
+        return models.Page(
+            items=[
+                models.MentionChatActivity(
+                    chat_id=1,
+                    chat_name="Engineering",
+                    mentions_count=3,
+                    last_mention_date=datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc),
+                    last_mention_message_id=103,
+                )
+            ],
+            has_more=False,
+            next_offset=None,
+        )
+
     async def resolve_chat(self, *, query: str, limit: int = 20) -> list[Any]:
         self._touch += 1
         _ = (query, limit)
@@ -184,6 +208,78 @@ class StubReader:
         self._touch += 1
         _ = (mention, chat_id, limit, offset_id, time_range)
         return await self.get_messages(chat_id=1, limit=limit)
+
+    async def list_replies_to_me(
+        self,
+        *,
+        chat_id: int | str | None = None,
+        limit: int = 20,
+        offset_id: int | None = None,
+        time_range: Any = None,
+    ) -> Any:
+        self._touch += 1
+        _ = (chat_id, limit, offset_id, time_range)
+        return await self.get_messages(chat_id=1, limit=limit)
+
+    async def get_messages_batch(
+        self,
+        *,
+        chat_ids: list[int | str],
+        limit_per_chat: int = 20,
+        time_range: Any = None,
+        order: Any = models.MessageOrder.DESC,
+        search: str | None = None,
+    ) -> Any:
+        self._touch += 1
+        _ = (chat_ids, limit_per_chat, time_range, order, search)
+        page = await self.get_messages(chat_id=1, limit=limit_per_chat)
+        return [
+            models.ChatMessagesBatchItem(
+                chat_id=1,
+                chat_name="Engineering",
+                messages=page.items,
+            )
+        ]
+
+    async def list_media_messages(
+        self,
+        *,
+        chat_id: int | str | None = None,
+        media_kind: Any = None,
+        limit: int = 20,
+        offset_id: int | None = None,
+        time_range: Any = None,
+    ) -> Any:
+        self._touch += 1
+        _ = (chat_id, media_kind, limit, offset_id, time_range)
+        return await self.get_messages(chat_id=1, limit=limit)
+
+    async def list_chat_activity_summary(
+        self,
+        *,
+        mention: str,
+        limit: int = 50,
+        offset: int = 0,
+        time_range: Any,
+    ) -> Any:
+        self._touch += 1
+        _ = (mention, limit, offset, time_range)
+        return models.Page(
+            items=[
+                models.ChatActivitySummary(
+                    chat_id=1,
+                    chat_name="Engineering",
+                    my_messages_count=2,
+                    mentions_to_me_count=3,
+                    unread_count=1,
+                    last_activity=datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc),
+                    last_my_message_date=datetime(2026, 1, 2, 11, 0, tzinfo=timezone.utc),
+                    last_mention_date=datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc),
+                )
+            ],
+            has_more=False,
+            next_offset=None,
+        )
 
     async def get_chat_snapshot(
         self,
@@ -317,6 +413,51 @@ async def test_get_message_media_returns_payload() -> None:
     assert response["data"]["kind"] == "photo"
     assert response["data"]["content_url"] == "http://proxy.local/media/token"
     assert response["data"]["url_source"] == "proxy"
+
+
+@pytest.mark.asyncio
+async def test_list_mentions_to_me_chats_uses_auth_username_fallback() -> None:
+    use_cases = TelegramUseCases(StubReader())
+
+    response = await execute_use_case(
+        use_cases.list_mentions_to_me_chats,
+        from_date="2026-01-01T00:00:00Z",
+    )
+
+    assert response["ok"] is True
+    assert response["data"]["mention"] == "@alice"
+    assert response["data"]["items"][0]["mentions_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_get_messages_batch_returns_chat_groups() -> None:
+    use_cases = TelegramUseCases(StubReader())
+
+    response = await execute_use_case(use_cases.get_messages_batch, chat_ids=[1, "@eng"])
+
+    assert response["ok"] is True
+    assert response["data"]["count"] == 1
+    assert response["data"]["items"][0]["chat_name"] == "Engineering"
+
+
+@pytest.mark.asyncio
+async def test_list_media_messages_returns_media_kind_field() -> None:
+    use_cases = TelegramUseCases(StubReader())
+
+    response = await execute_use_case(use_cases.list_media_messages, media_kind="photo")
+
+    assert response["ok"] is True
+    assert response["data"]["media_kind"] == "photo"
+
+
+@pytest.mark.asyncio
+async def test_list_chat_activity_summary_requires_from_date() -> None:
+    use_cases = TelegramUseCases(StubReader())
+
+    response = await execute_use_case(use_cases.list_chat_activity_summary)
+
+    assert response["ok"] is False
+    assert response["error"]["code"] == ErrorCode.VALIDATION_ERROR.value
 
 
 @pytest.mark.asyncio

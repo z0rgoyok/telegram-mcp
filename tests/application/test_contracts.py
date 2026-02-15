@@ -63,6 +63,29 @@ class ContractReader:
             has_more=False,
         )
 
+    async def list_mentions_to_me_chats(
+        self,
+        *,
+        mention: str,
+        limit: int = 50,
+        offset: int = 0,
+        time_range: Any = None,
+    ) -> Any:
+        self._touch += 1
+        _ = (mention, limit, offset, time_range)
+        return models.Page(
+            items=[
+                models.MentionChatActivity(
+                    chat_id=1,
+                    chat_name="A",
+                    mentions_count=2,
+                    last_mention_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                    last_mention_message_id=10,
+                )
+            ],
+            has_more=False,
+        )
+
     async def resolve_chat(self, *, query: str, limit: int = 20) -> list[Any]:
         self._touch += 1
         _ = (query, limit)
@@ -157,6 +180,71 @@ class ContractReader:
         _ = (mention, chat_id, limit, offset_id, time_range)
         return await self.get_messages(chat_id=1)
 
+    async def list_replies_to_me(
+        self,
+        *,
+        chat_id: int | str | None = None,
+        limit: int = 20,
+        offset_id: int | None = None,
+        time_range: Any = None,
+    ) -> Any:
+        self._touch += 1
+        _ = (chat_id, limit, offset_id, time_range)
+        return await self.get_messages(chat_id=1)
+
+    async def get_messages_batch(
+        self,
+        *,
+        chat_ids: list[int | str],
+        limit_per_chat: int = 20,
+        time_range: Any = None,
+        order: Any = models.MessageOrder.DESC,
+        search: str | None = None,
+    ) -> Any:
+        self._touch += 1
+        _ = (chat_ids, limit_per_chat, time_range, order, search)
+        page = await self.get_messages(chat_id=1, limit=limit_per_chat)
+        return [models.ChatMessagesBatchItem(chat_id=1, chat_name="A", messages=page.items)]
+
+    async def list_media_messages(
+        self,
+        *,
+        chat_id: int | str | None = None,
+        media_kind: Any = None,
+        limit: int = 20,
+        offset_id: int | None = None,
+        time_range: Any = None,
+    ) -> Any:
+        self._touch += 1
+        _ = (chat_id, media_kind, limit, offset_id, time_range)
+        return await self.get_messages(chat_id=1, limit=limit)
+
+    async def list_chat_activity_summary(
+        self,
+        *,
+        mention: str,
+        limit: int = 50,
+        offset: int = 0,
+        time_range: Any,
+    ) -> Any:
+        self._touch += 1
+        _ = (mention, limit, offset, time_range)
+        return models.Page(
+            items=[
+                models.ChatActivitySummary(
+                    chat_id=1,
+                    chat_name="A",
+                    my_messages_count=1,
+                    mentions_to_me_count=2,
+                    unread_count=3,
+                    last_activity=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                    last_my_message_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                    last_mention_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                )
+            ],
+            has_more=False,
+        )
+
     async def get_chat_snapshot(
         self,
         *,
@@ -222,11 +310,22 @@ async def test_json_contract_for_all_tools() -> None:
             use_cases.list_my_sent_chats,
             from_date="2026-01-01T00:00:00Z",
         ),
+        await execute_use_case(
+            use_cases.list_mentions_to_me_chats,
+            from_date="2026-01-01T00:00:00Z",
+        ),
         await execute_use_case(use_cases.get_messages, chat_id=1),
         await execute_use_case(use_cases.get_message_context, chat_id=1, message_id=1),
         await execute_use_case(use_cases.get_thread_messages, chat_id=1, root_message_id=1),
         await execute_use_case(use_cases.search_messages, query="hello"),
         await execute_use_case(use_cases.search_mentions_to_me, mention="@tester"),
+        await execute_use_case(use_cases.list_replies_to_me),
+        await execute_use_case(use_cases.get_messages_batch, chat_ids=[1]),
+        await execute_use_case(use_cases.list_media_messages),
+        await execute_use_case(
+            use_cases.list_chat_activity_summary,
+            from_date="2026-01-01T00:00:00Z",
+        ),
         await execute_use_case(use_cases.get_chat_snapshot, chat_id=1),
         await execute_use_case(use_cases.get_message_media, chat_id=1, message_id=1),
         await execute_use_case(use_cases.get_auth_status),

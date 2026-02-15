@@ -103,6 +103,25 @@ def create_server() -> FastMCP:
         return _render_response("list_my_sent_chats", payload, response_format)
 
     @mcp.tool()
+    async def list_mentions_to_me_chats(
+        mention: str | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.list_mentions_to_me_chats,
+            mention=mention,
+            limit=limit,
+            cursor=cursor,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return _render_response("list_mentions_to_me_chats", payload, response_format)
+
+    @mcp.tool()
     async def get_messages(
         chat_id: int | str,
         limit: int = 50,
@@ -202,6 +221,86 @@ def create_server() -> FastMCP:
             cursor=cursor,
         )
         return _render_response("search_mentions_to_me", payload, response_format)
+
+    @mcp.tool()
+    async def list_replies_to_me(
+        chat_id: int | str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.list_replies_to_me,
+            chat_id=chat_id,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            cursor=cursor,
+        )
+        return _render_response("list_replies_to_me", payload, response_format)
+
+    @mcp.tool()
+    async def get_messages_batch(
+        chat_ids: list[int | str],
+        limit_per_chat: int = 20,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        order: str = "desc",
+        search: str | None = None,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.get_messages_batch,
+            chat_ids=chat_ids,
+            limit_per_chat=limit_per_chat,
+            from_date=from_date,
+            to_date=to_date,
+            order=order,
+            search=search,
+        )
+        return _render_response("get_messages_batch", payload, response_format)
+
+    @mcp.tool()
+    async def list_media_messages(
+        chat_id: int | str | None = None,
+        media_kind: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.list_media_messages,
+            chat_id=chat_id,
+            media_kind=media_kind,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            cursor=cursor,
+        )
+        return _render_response("list_media_messages", payload, response_format)
+
+    @mcp.tool()
+    async def list_chat_activity_summary(
+        mention: str | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        payload = await execute_use_case(
+            use_cases.list_chat_activity_summary,
+            mention=mention,
+            limit=limit,
+            cursor=cursor,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        return _render_response("list_chat_activity_summary", payload, response_format)
 
     @mcp.tool()
     async def get_chat_snapshot(

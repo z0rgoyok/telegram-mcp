@@ -6,11 +6,14 @@ from typing import Any
 from ..domain.models import (
     AuthStatus,
     ChatActivity,
+    ChatActivitySummary,
     ChatInfo,
+    ChatMessagesBatchItem,
     ChatRef,
     ChatSnapshot,
     HealthStatus,
     MediaFile,
+    MentionChatActivity,
     MessageContext,
     MessageInfo,
     MessageMedia,
@@ -57,6 +60,38 @@ def chat_activity_to_dict(activity: ChatActivity) -> dict[str, Any]:
         "my_messages_count": activity.my_messages_count,
         "last_my_message_date": iso_utc(activity.last_my_message_date),
         "last_my_message_id": activity.last_my_message_id,
+    }
+
+
+def mention_chat_activity_to_dict(activity: MentionChatActivity) -> dict[str, Any]:
+    return {
+        "chat_id": activity.chat_id,
+        "chat_name": activity.chat_name,
+        "mentions_count": activity.mentions_count,
+        "last_mention_date": iso_utc(activity.last_mention_date),
+        "last_mention_message_id": activity.last_mention_message_id,
+    }
+
+
+def batch_item_to_dict(item: ChatMessagesBatchItem) -> dict[str, Any]:
+    return {
+        "chat_id": item.chat_id,
+        "chat_name": item.chat_name,
+        "messages": [message_to_dict(message) for message in item.messages],
+        "count": len(item.messages),
+    }
+
+
+def chat_activity_summary_to_dict(summary: ChatActivitySummary) -> dict[str, Any]:
+    return {
+        "chat_id": summary.chat_id,
+        "chat_name": summary.chat_name,
+        "my_messages_count": summary.my_messages_count,
+        "mentions_to_me_count": summary.mentions_to_me_count,
+        "unread_count": summary.unread_count,
+        "last_activity": iso_utc(summary.last_activity),
+        "last_my_message_date": iso_utc(summary.last_my_message_date),
+        "last_mention_date": iso_utc(summary.last_mention_date),
     }
 
 

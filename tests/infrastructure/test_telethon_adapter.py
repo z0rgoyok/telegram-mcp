@@ -12,6 +12,7 @@ from telethon import functions, types
 from tests.conftest import load_attr
 
 ErrorCode = load_attr("telegram_mcp.domain.errors", "ErrorCode")
+MediaKind = load_attr("telegram_mcp.domain.models", "MediaKind")
 MessageOrder = load_attr("telegram_mcp.domain.models", "MessageOrder")
 TimeRange = load_attr("telegram_mcp.domain.models", "TimeRange")
 Settings = load_attr("telegram_mcp.infrastructure.config", "Settings")
@@ -235,6 +236,11 @@ class FakeClient:
         if isinstance(request, functions.messages.SearchRequest):
             pool = [message for values in self.messages.values() for message in values]
 
+            query = request.q if hasattr(request, "q") else None
+            if isinstance(query, str) and query:
+                normalized_query = query.casefold()
+                pool = [message for message in pool if normalized_query in message.text.casefold()]
+
             from_user_id = request.from_id.user_id if hasattr(request.from_id, "user_id") else None
             if isinstance(from_user_id, int):
                 pool = [message for message in pool if message.sender_id == from_user_id]
@@ -253,12 +259,13 @@ class FakeClient:
                 SimpleNamespace(
                     id=item.id,
                     date=item.date,
+                    text=item.text,
                     peer_id=types.PeerUser(user_id=item.chat_id),
                     from_id=types.PeerUser(user_id=item.sender_id) if item.sender_id is not None else None,
                 )
                 for item in selected
             ]
-            return SimpleNamespace(messages=messages, users=[], chats=[])
+            return SimpleNamespace(messages=messages, users=[], chats=list(self.entities.values()))
 
         raise AssertionError(f"Unsupported request type: {type(request).__name__}")
 
@@ -367,6 +374,56 @@ async def test_search_mentions_to_me_finds_mentions_in_message_text(adapter: Any
     page = await adapter.search_mentions_to_me(mention="@tester", limit=10)
 
     assert [message.id for message in page.items] == [15]
+
+
+@pytest.mark.asyncio
+async def test_list_mentions_to_me_chats_returns_aggregated_activity(adapter: Any) -> None:
+    page = await adapter.list_mentions_to_me_chats(mention="@tester", limit=10, offset=0)
+
+    assert len(page.items) == 1
+    assert page.items[0].chat_id == 1
+    assert page.items[0].mentions_count == 1
+
+
+@pytest.mark.asyncio
+async def test_list_replies_to_me_returns_messages_replied_to_my_posts(adapter: Any) -> None:
+    page = await adapter.list_replies_to_me(chat_id=1, limit=10)
+
+    assert [message.id for message in page.items] == [22, 21]
+
+
+@pytest.mark.asyncio
+async def test_get_messages_batch_returns_items_per_chat(adapter: Any) -> None:
+    items = await adapter.get_messages_batch(chat_ids=[1, 2], limit_per_chat=2)
+
+    assert [item.chat_id for item in items] == [1, 2]
+    assert [message.id for message in items[0].messages] == [23, 22]
+    assert [message.id for message in items[1].messages] == [31]
+
+
+@pytest.mark.asyncio
+async def test_list_media_messages_filters_by_kind(adapter: Any) -> None:
+    page = await adapter.list_media_messages(media_kind=MediaKind.PHOTO, limit=10)
+
+    assert [message.id for message in page.items] == [23]
+
+
+@pytest.mark.asyncio
+async def test_list_chat_activity_summary_combines_my_and_mention_activity(adapter: Any) -> None:
+    page = await adapter.list_chat_activity_summary(
+        mention="@tester",
+        limit=10,
+        offset=0,
+        time_range=TimeRange(
+            from_date=datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
+            to_date=datetime(2026, 1, 31, 0, 0, tzinfo=timezone.utc),
+        ),
+    )
+
+    assert len(page.items) == 1
+    assert page.items[0].chat_id == 1
+    assert page.items[0].my_messages_count == 5
+    assert page.items[0].mentions_to_me_count == 1
 
 
 def test_map_error_to_unauthorized_code(adapter: Any) -> None:

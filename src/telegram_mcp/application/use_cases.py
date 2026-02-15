@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..domain.errors import ErrorCode, ToolError
+from ..domain.models import MediaKind
 from ..domain.ports import TelegramReader
 from .cursor import (
     decode_message_cursor,
@@ -13,11 +14,14 @@ from .cursor import (
 from .responses import success_response
 from .serializers import (
     auth_status_to_dict,
+    batch_item_to_dict,
+    chat_activity_summary_to_dict,
     chat_activity_to_dict,
     chat_ref_to_dict,
     context_to_dict,
     health_to_dict,
     media_file_to_dict,
+    mention_chat_activity_to_dict,
     message_to_dict,
     snapshot_to_dict,
     thread_to_dict,
@@ -132,6 +136,37 @@ class TelegramUseCases:
         return success_response(
             {
                 "items": [chat_activity_to_dict(activity) for activity in page.items],
+                "count": len(page.items),
+            },
+            cursor=next_cursor,
+            has_more=page.has_more,
+        )
+
+    async def list_mentions_to_me_chats(
+        self,
+        *,
+        mention: str | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
+        offset = decode_offset_cursor(cursor)
+        time_range = parse_time_range(from_date=from_date, to_date=to_date)
+        normalized_mention = await self._resolve_mention(mention)
+
+        page = await self._reader.list_mentions_to_me_chats(
+            mention=normalized_mention,
+            limit=normalized_limit,
+            offset=offset,
+            time_range=time_range,
+        )
+        next_cursor = encode_offset_cursor(page.next_offset) if page.next_offset is not None else None
+        return success_response(
+            {
+                "mention": normalized_mention,
+                "items": [mention_chat_activity_to_dict(activity) for activity in page.items],
                 "count": len(page.items),
             },
             cursor=next_cursor,
@@ -287,23 +322,7 @@ class TelegramUseCases:
         normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
         offset_id = decode_message_cursor(cursor)
         time_range = parse_time_range(from_date=from_date, to_date=to_date)
-        normalized_mention = _normalize_mention(mention)
-
-        if normalized_mention is None:
-            auth_status = await self._reader.get_auth_status()
-            if auth_status.username is None:
-                raise ToolError(
-                    ErrorCode.VALIDATION_ERROR,
-                    "mention is required when Telegram username is not set",
-                    {"field": "mention"},
-                )
-            normalized_mention = _normalize_mention(auth_status.username)
-            if normalized_mention is None:
-                raise ToolError(
-                    ErrorCode.VALIDATION_ERROR,
-                    "mention is required when Telegram username is not set",
-                    {"field": "mention"},
-                )
+        normalized_mention = await self._resolve_mention(mention)
 
         page = await self._reader.search_mentions_to_me(
             mention=normalized_mention,
@@ -318,6 +337,149 @@ class TelegramUseCases:
             {
                 "mention": normalized_mention,
                 "items": [message_to_dict(message) for message in page.items],
+                "count": len(page.items),
+            },
+            cursor=next_cursor,
+            has_more=page.has_more,
+        )
+
+    async def list_replies_to_me(
+        self,
+        *,
+        chat_id: int | str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_chat_id = parse_chat_id(chat_id) if chat_id is not None else None
+        normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
+        offset_id = decode_message_cursor(cursor)
+        time_range = parse_time_range(from_date=from_date, to_date=to_date)
+
+        page = await self._reader.list_replies_to_me(
+            chat_id=normalized_chat_id,
+            limit=normalized_limit,
+            offset_id=offset_id,
+            time_range=time_range,
+        )
+
+        next_cursor = encode_message_cursor(page.next_offset) if page.next_offset is not None else None
+        return success_response(
+            {
+                "items": [message_to_dict(message) for message in page.items],
+                "count": len(page.items),
+            },
+            cursor=next_cursor,
+            has_more=page.has_more,
+        )
+
+    async def get_messages_batch(
+        self,
+        *,
+        chat_ids: list[int | str],
+        limit_per_chat: int = 20,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        order: str = "desc",
+        search: str | None = None,
+    ) -> dict[str, Any]:
+        if not isinstance(chat_ids, list) or not chat_ids:
+            raise ToolError(
+                ErrorCode.VALIDATION_ERROR,
+                "chat_ids cannot be empty",
+                {"field": "chat_ids"},
+            )
+        normalized_chat_ids = [parse_chat_id(item) for item in chat_ids]
+        normalized_limit = require_int_in_range(
+            limit_per_chat,
+            "limit_per_chat",
+            minimum=1,
+            maximum=100,
+        )
+        normalized_order = parse_order(order)
+        time_range = parse_time_range(from_date=from_date, to_date=to_date)
+        normalized_search = search.strip() if isinstance(search, str) and search.strip() else None
+
+        items = await self._reader.get_messages_batch(
+            chat_ids=normalized_chat_ids,
+            limit_per_chat=normalized_limit,
+            time_range=time_range,
+            order=normalized_order,
+            search=normalized_search,
+        )
+        return success_response(
+            {
+                "items": [batch_item_to_dict(item) for item in items],
+                "count": len(items),
+            }
+        )
+
+    async def list_media_messages(
+        self,
+        *,
+        chat_id: int | str | None = None,
+        media_kind: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_chat_id = parse_chat_id(chat_id) if chat_id is not None else None
+        normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
+        normalized_media_kind = _parse_media_kind(media_kind)
+        offset_id = decode_message_cursor(cursor)
+        time_range = parse_time_range(from_date=from_date, to_date=to_date)
+
+        page = await self._reader.list_media_messages(
+            chat_id=normalized_chat_id,
+            media_kind=normalized_media_kind,
+            limit=normalized_limit,
+            offset_id=offset_id,
+            time_range=time_range,
+        )
+        next_cursor = encode_message_cursor(page.next_offset) if page.next_offset is not None else None
+        return success_response(
+            {
+                "media_kind": normalized_media_kind.value if normalized_media_kind else None,
+                "items": [message_to_dict(message) for message in page.items],
+                "count": len(page.items),
+            },
+            cursor=next_cursor,
+            has_more=page.has_more,
+        )
+
+    async def list_chat_activity_summary(
+        self,
+        *,
+        mention: str | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
+        offset = decode_offset_cursor(cursor)
+        time_range = parse_time_range(from_date=from_date, to_date=to_date)
+        if time_range is None or time_range.from_date is None:
+            raise ToolError(
+                ErrorCode.VALIDATION_ERROR,
+                "from_date is required",
+                {"field": "from_date"},
+            )
+        normalized_mention = await self._resolve_mention(mention)
+
+        page = await self._reader.list_chat_activity_summary(
+            mention=normalized_mention,
+            limit=normalized_limit,
+            offset=offset,
+            time_range=time_range,
+        )
+        next_cursor = encode_offset_cursor(page.next_offset) if page.next_offset is not None else None
+        return success_response(
+            {
+                "mention": normalized_mention,
+                "items": [chat_activity_summary_to_dict(item) for item in page.items],
                 "count": len(page.items),
             },
             cursor=next_cursor,
@@ -370,6 +532,27 @@ class TelegramUseCases:
         status = await self._reader.health_check()
         return success_response(health_to_dict(status))
 
+    async def _resolve_mention(self, mention: str | None) -> str:
+        normalized_mention = _normalize_mention(mention)
+        if normalized_mention is not None:
+            return normalized_mention
+
+        auth_status = await self._reader.get_auth_status()
+        if auth_status.username is None:
+            raise ToolError(
+                ErrorCode.VALIDATION_ERROR,
+                "mention is required when Telegram username is not set",
+                {"field": "mention"},
+            )
+        fallback_mention = _normalize_mention(auth_status.username)
+        if fallback_mention is None:
+            raise ToolError(
+                ErrorCode.VALIDATION_ERROR,
+                "mention is required when Telegram username is not set",
+                {"field": "mention"},
+            )
+        return fallback_mention
+
 
 def _normalize_mention(mention: str | None) -> str | None:
     if not isinstance(mention, str) or not mention.strip():
@@ -384,3 +567,19 @@ def _normalize_mention(mention: str | None) -> str | None:
             {"field": "mention"},
         )
     return f"@{username}"
+
+
+def _parse_media_kind(value: str | None) -> MediaKind | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip()
+    try:
+        return MediaKind(normalized)
+    except ValueError as exc:
+        raise ToolError(
+            ErrorCode.VALIDATION_ERROR,
+            "Invalid media_kind",
+            {"field": "media_kind", "allowed": [item.value for item in MediaKind], "value": value},
+        ) from exc

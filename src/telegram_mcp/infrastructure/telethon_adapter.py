@@ -9,11 +9,15 @@ from ..domain.errors import ErrorCode, ToolError
 from ..domain.models import (
     AuthStatus,
     ChatActivity,
+    ChatActivitySummary,
     ChatFilter,
+    ChatMessagesBatchItem,
     ChatRef,
     ChatSnapshot,
     HealthStatus,
     MediaFile,
+    MediaKind,
+    MentionChatActivity,
     MessageContext,
     MessageInfo,
     MessageOrder,
@@ -40,10 +44,25 @@ from .telethon_message_ops import (
     get_messages as get_messages_op,
 )
 from .telethon_message_ops import (
+    get_messages_batch as get_messages_batch_op,
+)
+from .telethon_message_ops import (
     get_thread_messages as get_thread_messages_op,
 )
 from .telethon_message_ops import (
+    list_chat_activity_summary as list_chat_activity_summary_op,
+)
+from .telethon_message_ops import (
+    list_media_messages as list_media_messages_op,
+)
+from .telethon_message_ops import (
+    list_mentions_to_me_chats as list_mentions_to_me_chats_op,
+)
+from .telethon_message_ops import (
     list_my_sent_chats as list_my_sent_chats_op,
+)
+from .telethon_message_ops import (
+    list_replies_to_me as list_replies_to_me_op,
 )
 from .telethon_message_ops import (
     search_mentions_to_me as search_mentions_to_me_op,
@@ -168,6 +187,25 @@ class TelethonAdapter(TelegramReader):
         except Exception as exc:
             raise self._map_error(exc) from exc
 
+    async def list_mentions_to_me_chats(
+        self,
+        *,
+        mention: str,
+        limit: int = 50,
+        offset: int = 0,
+        time_range: TimeRange | None = None,
+    ) -> Page[MentionChatActivity]:
+        try:
+            return await list_mentions_to_me_chats_op(
+                self._client,
+                mention=mention,
+                limit=limit,
+                offset=offset,
+                time_range=time_range,
+            )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
     async def get_messages(
         self,
         *,
@@ -268,6 +306,87 @@ class TelethonAdapter(TelegramReader):
                 chat_id=chat_id,
                 limit=limit,
                 offset_id=offset_id,
+                time_range=time_range,
+            )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
+    async def list_replies_to_me(
+        self,
+        *,
+        chat_id: int | str | None = None,
+        limit: int = 20,
+        offset_id: int | None = None,
+        time_range: TimeRange | None = None,
+    ) -> Page[MessageInfo]:
+        try:
+            return await list_replies_to_me_op(
+                self._client,
+                chat_id=chat_id,
+                limit=limit,
+                offset_id=offset_id,
+                time_range=time_range,
+            )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
+    async def get_messages_batch(
+        self,
+        *,
+        chat_ids: list[int | str],
+        limit_per_chat: int = 20,
+        time_range: TimeRange | None = None,
+        order: MessageOrder = MessageOrder.DESC,
+        search: str | None = None,
+    ) -> list[ChatMessagesBatchItem]:
+        try:
+            return await get_messages_batch_op(
+                self._client,
+                chat_ids=chat_ids,
+                limit_per_chat=limit_per_chat,
+                time_range=time_range,
+                order=order,
+                search=search,
+            )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
+    async def list_media_messages(
+        self,
+        *,
+        chat_id: int | str | None = None,
+        media_kind: MediaKind | None = None,
+        limit: int = 20,
+        offset_id: int | None = None,
+        time_range: TimeRange | None = None,
+    ) -> Page[MessageInfo]:
+        try:
+            return await list_media_messages_op(
+                self._client,
+                chat_id=chat_id,
+                media_kind=media_kind,
+                limit=limit,
+                offset_id=offset_id,
+                time_range=time_range,
+            )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
+    async def list_chat_activity_summary(
+        self,
+        *,
+        mention: str,
+        limit: int = 50,
+        offset: int = 0,
+        time_range: TimeRange,
+    ) -> Page[ChatActivitySummary]:
+        try:
+            return await list_chat_activity_summary_op(
+                self._client,
+                dialog_scan_limit=self._settings.dialog_scan_limit,
+                mention=mention,
+                limit=limit,
+                offset=offset,
                 time_range=time_range,
             )
         except Exception as exc:

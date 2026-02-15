@@ -5,11 +5,15 @@ from abc import ABC, abstractmethod
 from .models import (
     AuthStatus,
     ChatActivity,
+    ChatActivitySummary,
     ChatFilter,
+    ChatMessagesBatchItem,
     ChatRef,
     ChatSnapshot,
     HealthStatus,
     MediaFile,
+    MediaKind,
+    MentionChatActivity,
     MessageContext,
     MessageInfo,
     MessageOrder,
@@ -49,6 +53,17 @@ class TelegramReader(ABC):
         offset: int = 0,
         time_range: TimeRange,
     ) -> Page[ChatActivity]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def list_mentions_to_me_chats(
+        self,
+        *,
+        mention: str,
+        limit: int = 50,
+        offset: int = 0,
+        time_range: TimeRange | None = None,
+    ) -> Page[MentionChatActivity]:
         raise NotImplementedError
 
     @abstractmethod
@@ -118,6 +133,52 @@ class TelegramReader(ABC):
         offset_id: int | None = None,
         time_range: TimeRange | None = None,
     ) -> Page[MessageInfo]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def list_replies_to_me(
+        self,
+        *,
+        chat_id: int | str | None = None,
+        limit: int = 20,
+        offset_id: int | None = None,
+        time_range: TimeRange | None = None,
+    ) -> Page[MessageInfo]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_messages_batch(
+        self,
+        *,
+        chat_ids: list[int | str],
+        limit_per_chat: int = 20,
+        time_range: TimeRange | None = None,
+        order: MessageOrder = MessageOrder.DESC,
+        search: str | None = None,
+    ) -> list[ChatMessagesBatchItem]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def list_media_messages(
+        self,
+        *,
+        chat_id: int | str | None = None,
+        media_kind: MediaKind | None = None,
+        limit: int = 20,
+        offset_id: int | None = None,
+        time_range: TimeRange | None = None,
+    ) -> Page[MessageInfo]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def list_chat_activity_summary(
+        self,
+        *,
+        mention: str,
+        limit: int = 50,
+        offset: int = 0,
+        time_range: TimeRange,
+    ) -> Page[ChatActivitySummary]:
         raise NotImplementedError
 
     @abstractmethod

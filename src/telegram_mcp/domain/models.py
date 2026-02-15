@@ -100,6 +100,15 @@ class ChatActivity:
 
 
 @dataclass(frozen=True, slots=True)
+class MentionChatActivity:
+    chat_id: int
+    chat_name: str
+    mentions_count: int
+    last_mention_date: datetime
+    last_mention_message_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class MessageInfo:
     id: int
     date: datetime
@@ -168,6 +177,25 @@ class ChatSnapshot:
     chat: ChatInfo
     recent_messages: list[MessageInfo]
     pinned_messages: list[MessageInfo]
+
+
+@dataclass(frozen=True, slots=True)
+class ChatMessagesBatchItem:
+    chat_id: int
+    chat_name: str
+    messages: list[MessageInfo]
+
+
+@dataclass(frozen=True, slots=True)
+class ChatActivitySummary:
+    chat_id: int
+    chat_name: str
+    my_messages_count: int
+    mentions_to_me_count: int
+    unread_count: int
+    last_activity: datetime
+    last_my_message_date: datetime | None = None
+    last_mention_date: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)

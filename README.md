@@ -62,11 +62,16 @@ For tool errors:
 | `list_chats`          | List dialogs with filters, search, unread-only and cursor pagination. |
 | `list_unread_chats`   | Deterministic unread triage (`unread_count`, activity).               |
 | `list_my_sent_chats`  | Aggregate chats where you sent messages in a required time range.      |
+| `list_mentions_to_me_chats` | Aggregate chats where messages mention your handle.               |
 | `get_messages`        | Read chat history with date range, search, order, cursor.             |
 | `get_message_context` | Read target message with surrounding before/after messages.           |
 | `get_thread_messages` | Read replies for a root message.                                      |
 | `search_messages`     | Global/per-chat search; empty query works as wildcard.                |
 | `search_mentions_to_me` | Search messages mentioning your handle (`@username`) across chats.  |
+| `list_replies_to_me`  | Find messages that reply to your messages (global or per chat).       |
+| `get_messages_batch`  | Read several chats in one call (`chat_ids`, `limit_per_chat`).        |
+| `list_media_messages` | Find media messages (optional `media_kind`) globally or per chat.     |
+| `list_chat_activity_summary` | Combined per-chat activity: my messages, mentions, unread count. |
 | `get_chat_snapshot`   | Quick chat snapshot (`recent_messages`, optional `pinned_messages`).  |
 | `get_message_media`   | Return message attachment URL (Telegram URL or signed HTTP proxy).    |
 | `get_auth_status`     | Read-only Telegram auth status.                                       |
@@ -78,12 +83,18 @@ Time filters are supported by:
 - `get_messages`
 - `search_messages`
 - `list_my_sent_chats`
+- `list_mentions_to_me_chats`
 - `search_mentions_to_me`
+- `list_replies_to_me`
+- `get_messages_batch`
+- `list_media_messages`
+- `list_chat_activity_summary`
 
 Rules for `from_date` / `to_date`:
 - Must be ISO8601 datetime with time, for example `2026-02-15T00:00:00Z`.
 - Date-only values like `2026-02-15` are rejected with `VALIDATION_ERROR`.
 - For `list_my_sent_chats`, `from_date` is required.
+- For `list_chat_activity_summary`, `from_date` is required.
 
 ## Setup
 

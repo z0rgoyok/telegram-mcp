@@ -6,6 +6,8 @@ from telethon.tl.types import InputMessagesFilterPinned
 from ..domain.errors import ErrorCode, ToolError
 from ..domain.models import (
     ChatSnapshot,
+    MediaFile,
+    MediaUrlSource,
     MessageContext,
     MessageInfo,
     MessageOrder,
@@ -13,8 +15,15 @@ from ..domain.models import (
     ThreadMessages,
     TimeRange,
 )
+from .media_proxy import build_proxy_media_url, extract_direct_media_url
 from .telethon_chat_ops import load_chat_info
-from .telethon_helpers import entity_name, to_message_info
+from .telethon_helpers import (
+    entity_name,
+    extract_message_media,
+    require_entity_id,
+    require_message_id,
+    to_message_info,
+)
 
 
 async def get_messages(
@@ -29,7 +38,7 @@ async def get_messages(
 ) -> Page[MessageInfo]:
     entity = await client.get_entity(chat_id)
     chat_name = entity_name(entity)
-    default_chat_id = int(getattr(entity, "id", 0))
+    default_chat_id = require_entity_id(entity, context="get_messages")
 
     kwargs: dict[str, object] = {"limit": max(limit * 10, limit + 1)}
     if offset_id is not None:
@@ -71,7 +80,7 @@ async def get_message_context(
 ) -> MessageContext:
     entity = await client.get_entity(chat_id)
     chat_name = entity_name(entity)
-    default_chat_id = int(getattr(entity, "id", 0))
+    default_chat_id = require_entity_id(entity, context="get_message_context")
 
     target_msg = await client.get_messages(entity, ids=message_id)
     if target_msg is None:
@@ -123,7 +132,7 @@ async def get_thread_messages(
 ) -> ThreadMessages:
     entity = await client.get_entity(chat_id)
     chat_name = entity_name(entity)
-    default_chat_id = int(getattr(entity, "id", 0))
+    default_chat_id = require_entity_id(entity, context="get_thread_messages")
 
     root_msg = await client.get_messages(entity, ids=root_message_id)
     if root_msg is None:
@@ -179,7 +188,7 @@ async def search_messages(
 ) -> Page[MessageInfo]:
     entity = await client.get_entity(chat_id) if chat_id is not None else None
     default_chat_name = entity_name(entity) if entity is not None else ""
-    default_chat_id = int(getattr(entity, "id", 0)) if entity is not None else 0
+    default_chat_id = require_entity_id(entity, context="search_messages") if entity is not None else 0
     normalized_sender = sender_query.casefold() if sender_query else None
 
     kwargs: dict[str, object] = {
@@ -223,7 +232,7 @@ async def get_chat_snapshot(
     include_pinned: bool,
 ) -> ChatSnapshot:
     entity = await client.get_entity(chat_id)
-    default_chat_id = int(getattr(entity, "id", 0))
+    default_chat_id = require_entity_id(entity, context="get_chat_snapshot")
     chat_name = entity_name(entity)
 
     chat_info = await load_chat_info(
@@ -261,4 +270,79 @@ async def get_chat_snapshot(
         chat=chat_info,
         recent_messages=recent_messages,
         pinned_messages=pinned_messages,
+    )
+
+
+async def get_message_media(
+    client: TelegramClient,
+    *,
+    chat_id: int | str,
+    message_id: int,
+    max_bytes: int,
+    proxy_public_base_url: str,
+    proxy_token_secret: str,
+    proxy_token_ttl_seconds: int,
+) -> MediaFile:
+    entity = await client.get_entity(chat_id)
+    message = await client.get_messages(entity, ids=message_id)
+    if message is None:
+        raise ToolError(
+            ErrorCode.NOT_FOUND,
+            "Message not found",
+            {"chat_id": chat_id, "message_id": message_id},
+        )
+
+    media = extract_message_media(message)
+    if media is None:
+        raise ToolError(
+            ErrorCode.NOT_FOUND,
+            "Message has no media",
+            {"chat_id": chat_id, "message_id": message_id},
+        )
+
+    known_size_bytes = media.size_bytes
+    if known_size_bytes is not None and known_size_bytes > max_bytes:
+        raise ToolError(
+            ErrorCode.VALIDATION_ERROR,
+            "Media exceeds size limit",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "max_bytes": max_bytes,
+                "actual_bytes": known_size_bytes,
+            },
+        )
+
+    normalized_chat_id = require_entity_id(entity, context="get_message_media")
+    normalized_message_id = require_message_id(message, context="get_message_media")
+    direct_media_url = extract_direct_media_url(message)
+    if direct_media_url:
+        return MediaFile(
+            chat_id=normalized_chat_id,
+            message_id=normalized_message_id,
+            kind=media.kind,
+            mime_type=media.mime_type,
+            file_name=media.file_name,
+            size_bytes=known_size_bytes,
+            content_url=direct_media_url,
+            url_source=MediaUrlSource.TELEGRAM,
+        )
+
+    proxy_media_url = build_proxy_media_url(
+        base_url=proxy_public_base_url,
+        chat_id=normalized_chat_id,
+        message_id=normalized_message_id,
+        secret=proxy_token_secret,
+        ttl_seconds=proxy_token_ttl_seconds,
+    )
+
+    return MediaFile(
+        chat_id=normalized_chat_id,
+        message_id=normalized_message_id,
+        kind=media.kind,
+        mime_type=media.mime_type,
+        file_name=media.file_name,
+        size_bytes=known_size_bytes,
+        content_url=proxy_media_url,
+        url_source=MediaUrlSource.PROXY,
     )

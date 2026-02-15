@@ -26,6 +26,22 @@ class MessageOrder(str, Enum):
     ASC = "asc"
 
 
+class MediaKind(str, Enum):
+    PHOTO = "photo"
+    VIDEO = "video"
+    AUDIO = "audio"
+    DOCUMENT = "document"
+    STICKER = "sticker"
+    VOICE = "voice"
+    ANIMATION = "animation"
+    UNKNOWN = "unknown"
+
+
+class MediaUrlSource(str, Enum):
+    TELEGRAM = "telegram"
+    PROXY = "proxy"
+
+
 def to_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
@@ -85,6 +101,31 @@ class MessageInfo:
     sender_id: int | None = None
     reply_to_message_id: int | None = None
     is_pinned: bool = False
+    media: MessageMedia | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MessageMedia:
+    kind: MediaKind
+    mime_type: str | None = None
+    file_name: str | None = None
+    size_bytes: int | None = None
+    width: int | None = None
+    height: int | None = None
+    duration_seconds: int | None = None
+    has_spoiler: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MediaFile:
+    chat_id: int
+    message_id: int
+    kind: MediaKind
+    content_url: str
+    url_source: MediaUrlSource
+    mime_type: str | None = None
+    file_name: str | None = None
+    size_bytes: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

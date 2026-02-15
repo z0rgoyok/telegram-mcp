@@ -64,6 +64,7 @@ For tool errors:
 | `get_thread_messages` | Read replies for a root message.                                      |
 | `search_messages`     | Global/per-chat search with sender and date filters.                  |
 | `get_chat_snapshot`   | Quick chat snapshot (`recent_messages`, optional `pinned_messages`).  |
+| `get_message_media`   | Return message attachment URL (Telegram URL or signed HTTP proxy).    |
 | `get_auth_status`     | Read-only Telegram auth status.                                       |
 | `health_check`        | Service/provider health diagnostics.                                  |
 
@@ -86,6 +87,12 @@ cp .env.example .env
 Optional env:
 
 - `DIALOG_SCAN_LIMIT` (default `1000`) - upper bound for dialog scanning operations.
+- `MEDIA_DOWNLOAD_LIMIT_BYTES` (default `8388608`) - max attachment size for media proxy downloads.
+- `MEDIA_PROXY_HOST` (default `0.0.0.0`) - bind host for internal media proxy.
+- `MEDIA_PROXY_PORT` (default `8902`) - bind port for internal media proxy.
+- `MEDIA_PROXY_PUBLIC_BASE_URL` (default `http://localhost:8902`) - base URL returned to MCP clients.
+- `MEDIA_PROXY_TOKEN_SECRET` (default `API_HASH`) - HMAC secret for signed media URLs.
+- `MEDIA_PROXY_TOKEN_TTL_SECONDS` (default `3600`) - signed media URL lifetime.
 
 ### 3. Build
 
@@ -111,7 +118,7 @@ Open http://localhost:8901, enter phone, code, and 2FA password if needed.
       "command": "docker",
       "args": [
         "compose", "-f", "/path/to/telegram-mcp/docker-compose.yml",
-        "run", "--rm", "-i", "--no-deps", "mcp"
+        "run", "--rm", "-i", "--no-deps", "--service-ports", "mcp"
       ]
     }
   }

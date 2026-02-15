@@ -168,6 +168,25 @@ class StubReader:
         )
         return models.ChatSnapshot(chat=chat, recent_messages=[], pinned_messages=[])
 
+    async def get_message_media(
+        self,
+        *,
+        chat_id: int | str,
+        message_id: int,
+    ) -> Any:
+        self._touch += 1
+        _ = (chat_id, message_id)
+        return models.MediaFile(
+            chat_id=1,
+            message_id=message_id,
+            kind=models.MediaKind.PHOTO,
+            mime_type="image/jpeg",
+            file_name="task.jpg",
+            size_bytes=4,
+            content_url="http://proxy.local/media/token",
+            url_source=models.MediaUrlSource.PROXY,
+        )
+
     async def get_auth_status(self) -> Any:
         self._touch += 1
         return models.AuthStatus(
@@ -250,3 +269,15 @@ async def test_execute_use_case_keeps_domain_errors() -> None:
 
     assert response["ok"] is False
     assert response["error"]["code"] == ErrorCode.UNAUTHORIZED.value
+
+
+@pytest.mark.asyncio
+async def test_get_message_media_returns_payload() -> None:
+    use_cases = TelegramUseCases(StubReader())
+
+    response = await execute_use_case(use_cases.get_message_media, chat_id=1, message_id=101)
+
+    assert response["ok"] is True
+    assert response["data"]["kind"] == "photo"
+    assert response["data"]["content_url"] == "http://proxy.local/media/token"
+    assert response["data"]["url_source"] == "proxy"

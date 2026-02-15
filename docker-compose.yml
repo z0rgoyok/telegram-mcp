@@ -3,6 +3,8 @@ services:
     build: .
     stdin_open: true
     env_file: .env
+    ports:
+      - "8902:8902"
     volumes:
       - ./var:/app/var
 

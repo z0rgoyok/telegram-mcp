@@ -9,8 +9,10 @@ from ..domain.models import (
     ChatRef,
     ChatSnapshot,
     HealthStatus,
+    MediaFile,
     MessageContext,
     MessageInfo,
+    MessageMedia,
     ThreadMessages,
 )
 
@@ -58,6 +60,35 @@ def message_to_dict(message: MessageInfo) -> dict[str, Any]:
         "text": message.text,
         "reply_to_message_id": message.reply_to_message_id,
         "is_pinned": message.is_pinned,
+        "media": message_media_to_dict(message.media),
+    }
+
+
+def message_media_to_dict(media: MessageMedia | None) -> dict[str, Any] | None:
+    if media is None:
+        return None
+    return {
+        "kind": media.kind.value,
+        "mime_type": media.mime_type,
+        "file_name": media.file_name,
+        "size_bytes": media.size_bytes,
+        "width": media.width,
+        "height": media.height,
+        "duration_seconds": media.duration_seconds,
+        "has_spoiler": media.has_spoiler,
+    }
+
+
+def media_file_to_dict(media_file: MediaFile) -> dict[str, Any]:
+    return {
+        "chat_id": media_file.chat_id,
+        "message_id": media_file.message_id,
+        "kind": media_file.kind.value,
+        "mime_type": media_file.mime_type,
+        "file_name": media_file.file_name,
+        "size_bytes": media_file.size_bytes,
+        "content_url": media_file.content_url,
+        "url_source": media_file.url_source.value,
     }
 
 

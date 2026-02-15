@@ -23,6 +23,17 @@ class FakeReply:
 
 
 @dataclass
+class FakeFile:
+    name: str
+    mime_type: str
+    size: int
+    url: str | None = None
+    width: int | None = None
+    height: int | None = None
+    duration: int | None = None
+
+
+@dataclass
 class FakeMessage:
     id: int
     date: datetime
@@ -33,6 +44,15 @@ class FakeMessage:
     chat: object | None
     reply_to: FakeReply | None = None
     pinned: bool = False
+    media: object | None = None
+    file: FakeFile | None = None
+    photo: object | None = None
+    video: object | None = None
+    voice: object | None = None
+    audio: object | None = None
+    sticker: object | None = None
+    gif: object | None = None
+    document: object | None = None
 
 
 @dataclass
@@ -92,6 +112,24 @@ class FakeClient:
                 FakeMessage(20, datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc), "thread root", 1, 100, user_alice, self.entities[1], pinned=True),
                 FakeMessage(22, datetime(2026, 1, 5, 10, 2, tzinfo=timezone.utc), "thread reply 2", 1, 100, user_alice, self.entities[1], reply_to=FakeReply(20)),
                 FakeMessage(21, datetime(2026, 1, 5, 10, 1, tzinfo=timezone.utc), "thread reply 1", 1, 200, user_bob, self.entities[1], reply_to=FakeReply(20)),
+                FakeMessage(
+                    23,
+                    datetime(2026, 1, 6, 10, 0, tzinfo=timezone.utc),
+                    "",
+                    1,
+                    100,
+                    user_alice,
+                    self.entities[1],
+                    media=SimpleNamespace(spoiler=False),
+                    file=FakeFile(
+                        name="photo.jpg",
+                        mime_type="image/jpeg",
+                        size=4,
+                        width=640,
+                        height=480,
+                    ),
+                    photo=SimpleNamespace(id=7001),
+                ),
             ],
             2: [
                 FakeMessage(31, datetime(2026, 1, 1, 11, 0, tzinfo=timezone.utc), "support task", 2, 200, user_bob, self.entities[2]),
@@ -186,6 +224,13 @@ class FakeClient:
         for message in pool[:limit]:
             yield message
 
+    async def download_media(self, message: Any, file: Any = None) -> bytes:
+        _ = self
+        _ = file
+        if getattr(message, "id", None) == 23:
+            return b"\x00\x01\x02\x03"
+        return b""
+
 
 @pytest.fixture
 def adapter() -> Any:
@@ -195,6 +240,12 @@ def adapter() -> Any:
         phone="+10000000000",
         session_path=Path("var/telegram"),
         dialog_scan_limit=100,
+        media_download_limit_bytes=1024,
+        media_proxy_host="0.0.0.0",
+        media_proxy_port=8902,
+        media_proxy_public_base_url="http://proxy.test",
+        media_proxy_token_secret="secret",
+        media_proxy_token_ttl_seconds=3600,
     )
     instance = TelethonAdapter(settings)
     instance._client = FakeClient()
@@ -213,9 +264,9 @@ async def test_list_unread_dialogs_sorted_deterministically(adapter: Any) -> Non
 async def test_get_messages_supports_pagination(adapter: Any) -> None:
     page = await adapter.get_messages(chat_id=1, limit=2)
 
-    assert [message.id for message in page.items] == [22, 21]
+    assert [message.id for message in page.items] == [23, 22]
     assert page.has_more is True
-    assert page.next_offset == 21
+    assert page.next_offset == 22
 
 
 @pytest.mark.asyncio
@@ -289,4 +340,38 @@ async def test_health_check_reports_ok(adapter: Any) -> None:
 async def test_get_messages_with_ascending_order(adapter: Any) -> None:
     page = await adapter.get_messages(chat_id=1, limit=3, order=MessageOrder.ASC)
 
-    assert [message.id for message in page.items] == [20, 21, 22]
+    assert [message.id for message in page.items] == [21, 22, 23]
+
+
+@pytest.mark.asyncio
+async def test_get_messages_includes_media_metadata(adapter: Any) -> None:
+    page = await adapter.get_messages(chat_id=1, limit=1)
+
+    media = page.items[0].media
+    assert media is not None
+    assert media.kind.value == "photo"
+    assert media.mime_type == "image/jpeg"
+    assert media.file_name == "photo.jpg"
+    assert media.size_bytes == 4
+
+
+@pytest.mark.asyncio
+async def test_get_message_media_returns_content(adapter: Any) -> None:
+    media_file = await adapter.get_message_media(chat_id=1, message_id=23)
+
+    assert media_file.kind.value == "photo"
+    assert media_file.size_bytes == 4
+    assert media_file.url_source.value == "proxy"
+    assert media_file.content_url.startswith("http://proxy.test/media/")
+
+
+@pytest.mark.asyncio
+async def test_get_message_media_prefers_direct_telegram_url(adapter: Any) -> None:
+    media_message = next(message for message in adapter._client.messages[1] if message.id == 23)
+    assert media_message.file is not None
+    media_message.file.url = "https://cdn.telegram.org/file/23.jpg"
+
+    media_file = await adapter.get_message_media(chat_id=1, message_id=23)
+
+    assert media_file.url_source.value == "telegram"
+    assert media_file.content_url == "https://cdn.telegram.org/file/23.jpg"

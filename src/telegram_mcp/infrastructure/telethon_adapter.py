@@ -12,6 +12,7 @@ from ..domain.models import (
     ChatRef,
     ChatSnapshot,
     HealthStatus,
+    MediaFile,
     MessageContext,
     MessageInfo,
     MessageOrder,
@@ -38,6 +39,9 @@ from .telethon_message_ops import (
     get_message_context as get_message_context_op,
 )
 from .telethon_message_ops import (
+    get_message_media as get_message_media_op,
+)
+from .telethon_message_ops import (
     get_messages as get_messages_op,
 )
 from .telethon_message_ops import (
@@ -62,6 +66,10 @@ class TelethonAdapter(TelegramReader):
             flood_sleep_threshold=30,
         )
 
+    @property
+    def raw_client(self) -> TelegramClient:
+        return self._client
+
     async def connect(self) -> None:
         try:
             await self._client.connect()
@@ -77,7 +85,11 @@ class TelethonAdapter(TelegramReader):
                     },
                 )
             me = await self._client.get_me()
-            logger.info("Connected as %s (id=%s)", getattr(me, "first_name", "user"), me.id)
+            me_payload = me
+            first_name = me_payload.first_name if hasattr(me_payload, "first_name") else None
+            display_name = first_name if isinstance(first_name, str) and first_name else "user"
+            user_id = me_payload.id if hasattr(me_payload, "id") else "unknown"
+            logger.info("Connected as %s (id=%s)", display_name, user_id)
         except Exception as exc:
             raise self._map_error(exc) from exc
 
@@ -240,6 +252,25 @@ class TelethonAdapter(TelegramReader):
         except Exception as exc:
             raise self._map_error(exc) from exc
 
+    async def get_message_media(
+        self,
+        *,
+        chat_id: int | str,
+        message_id: int,
+    ) -> MediaFile:
+        try:
+            return await get_message_media_op(
+                self._client,
+                chat_id=chat_id,
+                message_id=message_id,
+                max_bytes=self._settings.media_download_limit_bytes,
+                proxy_public_base_url=self._settings.media_proxy_public_base_url,
+                proxy_token_secret=self._settings.media_proxy_token_secret,
+                proxy_token_ttl_seconds=self._settings.media_proxy_token_ttl_seconds,
+            )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
     async def get_auth_status(self) -> AuthStatus:
         try:
             connected = self._client.is_connected()
@@ -248,14 +279,21 @@ class TelethonAdapter(TelegramReader):
                 return AuthStatus(connected=connected, authorized=False)
 
             me = await self._client.get_me()
-            name_parts = [getattr(me, "first_name", "") or "", getattr(me, "last_name", "") or ""]
+            me_payload = me
+            first_name_obj = me_payload.first_name if hasattr(me_payload, "first_name") else None
+            last_name_obj = me_payload.last_name if hasattr(me_payload, "last_name") else None
+            first_name = first_name_obj if isinstance(first_name_obj, str) else ""
+            last_name = last_name_obj if isinstance(last_name_obj, str) else ""
+            name_parts = [first_name, last_name]
             full_name = " ".join(part for part in name_parts if part).strip() or None
+            user_id_obj = me_payload.id if hasattr(me_payload, "id") else None
+            username_obj = me_payload.username if hasattr(me_payload, "username") else None
             return AuthStatus(
                 connected=connected,
                 authorized=True,
-                user_id=getattr(me, "id", None),
+                user_id=user_id_obj if isinstance(user_id_obj, int) else None,
                 name=full_name,
-                username=getattr(me, "username", None),
+                username=username_obj if isinstance(username_obj, str) else None,
             )
         except Exception as exc:
             raise self._map_error(exc) from exc
@@ -275,10 +313,11 @@ class TelethonAdapter(TelegramReader):
             return exc
 
         if isinstance(exc, FloodWaitError):
+            retry_after_obj = exc.seconds if hasattr(exc, "seconds") else None
             return ToolError(
                 ErrorCode.RATE_LIMITED,
                 "Telegram rate limit exceeded",
-                {"retry_after_seconds": getattr(exc, "seconds", None)},
+                {"retry_after_seconds": retry_after_obj if isinstance(retry_after_obj, int) else None},
             )
 
         if isinstance(exc, ValueError):

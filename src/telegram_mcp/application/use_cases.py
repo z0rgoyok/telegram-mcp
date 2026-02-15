@@ -15,6 +15,7 @@ from .serializers import (
     chat_ref_to_dict,
     context_to_dict,
     health_to_dict,
+    media_file_to_dict,
     message_to_dict,
     snapshot_to_dict,
     thread_to_dict,
@@ -258,6 +259,21 @@ class TelegramUseCases:
         )
 
         return success_response(snapshot_to_dict(snapshot))
+
+    async def get_message_media(
+        self,
+        *,
+        chat_id: int | str,
+        message_id: int,
+    ) -> dict[str, Any]:
+        normalized_chat_id = parse_chat_id(chat_id)
+        normalized_message_id = require_int_in_range(message_id, "message_id", minimum=1)
+
+        media_file = await self._reader.get_message_media(
+            chat_id=normalized_chat_id,
+            message_id=normalized_message_id,
+        )
+        return success_response(media_file_to_dict(media_file))
 
     async def get_auth_status(self) -> dict[str, Any]:
         status = await self._reader.get_auth_status()

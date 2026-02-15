@@ -5,13 +5,16 @@ import logging
 from telethon import TelegramClient
 from telethon.errors import RPCError
 
+from ..domain.errors import ToolError
 from ..domain.models import ChatFilter, ChatInfo, ChatRef, Page, to_utc
 from .telethon_helpers import (
     chat_matches_query,
     chat_rank,
     entity_name,
     entity_to_chat_type,
+    entity_username,
     matches_filter,
+    require_entity_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +42,7 @@ async def list_dialogs(
             continue
 
         name = dialog.name or entity_name(dialog.entity)
-        username = getattr(dialog.entity, "username", None)
+        username = entity_username(dialog.entity)
         if query_text and not chat_matches_query(
             query=query_text,
             chat_id=dialog.id,
@@ -84,7 +87,7 @@ async def list_unread_dialogs(
                 id=dialog.id,
                 type=entity_to_chat_type(dialog.entity),
                 name=dialog.name or entity_name(dialog.entity),
-                username=getattr(dialog.entity, "username", None),
+                username=entity_username(dialog.entity),
                 unread_count=dialog.unread_count,
                 last_activity=to_utc(dialog.date) if dialog.date else None,
             )
@@ -118,15 +121,15 @@ async def resolve_chat(
         try:
             entity = await client.get_entity(query)
             ref = ChatRef(
-                id=getattr(entity, "id", 0),
+                id=require_entity_id(entity, context="resolve_chat"),
                 type=entity_to_chat_type(entity),
                 name=entity_name(entity),
-                username=getattr(entity, "username", None),
+                username=entity_username(entity),
                 unread_count=0,
                 last_activity=None,
             )
             result[ref.id] = ref
-        except (RPCError, ValueError, TypeError):
+        except (RPCError, ValueError, TypeError, ToolError):
             logger.debug("Direct resolve failed for %s", query)
 
     async for dialog in client.iter_dialogs(limit=dialog_scan_limit):
@@ -134,7 +137,7 @@ async def resolve_chat(
             id=dialog.id,
             type=entity_to_chat_type(dialog.entity),
             name=dialog.name or entity_name(dialog.entity),
-            username=getattr(dialog.entity, "username", None),
+            username=entity_username(dialog.entity),
             unread_count=dialog.unread_count,
             last_activity=to_utc(dialog.date) if dialog.date else None,
         )
@@ -159,23 +162,23 @@ async def load_chat_info(
     dialog_scan_limit: int,
     entity: object,
 ) -> ChatInfo:
-    entity_id = getattr(entity, "id", None)
+    target_id = require_entity_id(entity, context="load_chat_info")
     async for dialog in client.iter_dialogs(limit=dialog_scan_limit):
-        if dialog.id == entity_id:
+        if dialog.id == target_id:
             return ChatInfo(
                 id=dialog.id,
                 type=entity_to_chat_type(dialog.entity),
                 name=dialog.name or entity_name(dialog.entity),
-                username=getattr(dialog.entity, "username", None),
+                username=entity_username(dialog.entity),
                 unread_count=dialog.unread_count,
                 last_activity=to_utc(dialog.date) if dialog.date else None,
             )
 
     return ChatInfo(
-        id=entity_id if isinstance(entity_id, int) else 0,
+        id=target_id,
         type=entity_to_chat_type(entity),
         name=entity_name(entity),
-        username=getattr(entity, "username", None),
+        username=entity_username(entity),
         unread_count=0,
         last_activity=None,
     )

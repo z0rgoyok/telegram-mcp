@@ -134,6 +134,25 @@ class ContractReader:
         chat = models.ChatInfo(id=1, type=models.ChatType.GROUP, name="A", unread_count=0)
         return models.ChatSnapshot(chat=chat, recent_messages=[], pinned_messages=[])
 
+    async def get_message_media(
+        self,
+        *,
+        chat_id: int | str,
+        message_id: int,
+    ) -> Any:
+        self._touch += 1
+        _ = (chat_id, message_id)
+        return models.MediaFile(
+            chat_id=1,
+            message_id=message_id,
+            kind=models.MediaKind.PHOTO,
+            mime_type="image/jpeg",
+            file_name="image.jpg",
+            size_bytes=4,
+            content_url="http://proxy.local/media/token",
+            url_source=models.MediaUrlSource.PROXY,
+        )
+
     async def get_auth_status(self) -> Any:
         self._touch += 1
         return models.AuthStatus(
@@ -169,6 +188,7 @@ async def test_json_contract_for_all_tools() -> None:
         await execute_use_case(use_cases.get_thread_messages, chat_id=1, root_message_id=1),
         await execute_use_case(use_cases.search_messages, query="hello"),
         await execute_use_case(use_cases.get_chat_snapshot, chat_id=1),
+        await execute_use_case(use_cases.get_message_media, chat_id=1, message_id=1),
         await execute_use_case(use_cases.get_auth_status),
         await execute_use_case(use_cases.health_check),
     ]

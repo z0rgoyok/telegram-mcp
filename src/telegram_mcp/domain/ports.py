@@ -8,6 +8,7 @@ from .models import (
     ChatRef,
     ChatSnapshot,
     HealthStatus,
+    MediaFile,
     MessageContext,
     MessageInfo,
     MessageOrder,
@@ -104,6 +105,15 @@ class TelegramReader(ABC):
         recent_limit: int,
         include_pinned: bool,
     ) -> ChatSnapshot:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_message_media(
+        self,
+        *,
+        chat_id: int | str,
+        message_id: int,
+    ) -> MediaFile:
         raise NotImplementedError
 
     @abstractmethod

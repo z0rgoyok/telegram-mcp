@@ -1,3 +1,7 @@
+main goals:
+- read-only
+- media proxy so agent can see images 
+
 # telegram-mcp
 
 Read-only MCP server for accessing your personal Telegram account from Claude Code.

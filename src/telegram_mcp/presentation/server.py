@@ -20,7 +20,12 @@ from .media_proxy_server import MediaProxyServer
 logger = logging.getLogger(__name__)
 
 
-def create_server() -> FastMCP:
+def create_server(
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    mount_path: str = "/",
+) -> FastMCP:
     settings = Settings.from_env()
     adapter_impl = TelethonAdapter(settings)
     media_proxy = MediaProxyServer(adapter_impl.raw_client, settings)
@@ -42,6 +47,9 @@ def create_server() -> FastMCP:
     mcp = FastMCP(
         "Telegram (read-only)",
         lifespan=lifespan,
+        host=host,
+        port=port,
+        mount_path=mount_path,
     )
 
     @mcp.tool()

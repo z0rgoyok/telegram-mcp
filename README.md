@@ -31,7 +31,7 @@ All MCP tools return:
 }
 ```
 
-Important: use `--service-ports` for `mcp`. Without published port `8902`, `get_message_media` proxy URLs will be unreachable.
+Important for `stdio` mode: use `--service-ports` for `mcp`. Without published port `8902`, `get_message_media` proxy URLs will be unreachable.
 
 For tool errors:
 
@@ -112,6 +112,10 @@ cp .env.example .env
 
 Optional env:
 
+- `MCP_TRANSPORT` (default `stdio`) - runtime transport (`stdio`, `sse`, `streamable-http`) for `python -m telegram_mcp`.
+- `MCP_HTTP_HOST` (default `127.0.0.1`) - bind host for `sse`/`streamable-http` transports.
+- `MCP_HTTP_PORT` (default `8000`) - bind port for `sse`/`streamable-http` transports.
+- `MCP_MOUNT_PATH` (default `/`) - optional SSE mount prefix.
 - `DIALOG_SCAN_LIMIT` (default `1000`) - upper bound for dialog scanning operations.
 - `MEDIA_DOWNLOAD_LIMIT_BYTES` (default `8388608`) - max attachment size for media proxy downloads.
 - `MEDIA_PROXY_HOST` (default `0.0.0.0`) - bind host for internal media proxy.
@@ -134,7 +138,9 @@ docker compose --profile auth run --rm --service-ports auth
 
 Open http://localhost:8901, enter phone, code, and 2FA password if needed.
 
-### 5. Add to Claude Code
+### 5. Choose transport
+
+#### Option A: stdio (default, one process per client)
 
 ```json
 {
@@ -149,6 +155,41 @@ Open http://localhost:8901, enter phone, code, and 2FA password if needed.
     }
   }
 }
+```
+
+If a previous `mcp` one-off container is still running, a new `docker compose run` will fail with `port is already allocated` on `8902`.
+
+#### Option B: SSE (shared long-lived server)
+
+Start background SSE server:
+
+```bash
+docker compose --profile sse up -d mcp-sse
+```
+
+Endpoints:
+
+- MCP SSE endpoint: `http://localhost:8903/sse`
+- Media proxy endpoint: `http://localhost:8904/media/{token}`
+
+Claude Code example:
+
+```json
+{
+  "mcpServers": {
+    "telegram-sse": {
+      "type": "sse",
+      "url": "http://localhost:8903/sse"
+    }
+  }
+}
+```
+
+Stop SSE server:
+
+```bash
+docker compose --profile sse stop mcp-sse
+docker compose --profile sse rm -f mcp-sse
 ```
 
 ## Architecture

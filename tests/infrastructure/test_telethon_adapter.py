@@ -179,9 +179,14 @@ class FakeClient:
             return types.InputPeerUser(user_id=entity.id, access_hash=0)
         raise ValueError("Entity not found")
 
-    async def get_messages(self, entity: Any, ids: int) -> FakeMessage | None:
+    async def get_messages(self, entity: Any, ids: int | list[int]) -> FakeMessage | list[FakeMessage] | None:
         chat_id = entity.id
-        for message in self.messages.get(chat_id, []):
+        pool = self.messages.get(chat_id, [])
+        if isinstance(ids, list):
+            requested = set(ids)
+            return [message for message in pool if message.id in requested]
+
+        for message in pool:
             if message.id == ids:
                 return message
         return None

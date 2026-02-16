@@ -39,6 +39,7 @@ INVALID_CHAT_ID = 0
 MESSAGE_SCAN_MULTIPLIER = 10
 PINNED_MESSAGES_LIMIT = 10
 PAGE_OVERFETCH_COUNT = 1
+REPLY_TARGETS_BATCH_SIZE = 100
 ZERO_HASH = 0
 ZERO_OFFSET = 0
 NO_MAX_ID = 0
@@ -373,39 +374,41 @@ async def list_replies_to_me(
     if time_range and time_range.to_date:
         kwargs["offset_date"] = time_range.to_date
 
-    batch: list[MessageInfo] = []
+    scanned_count = 0
+    candidates: list[MessageInfo] = []
+    reply_ids_by_chat: dict[int, set[int]] = {}
     async for msg in client.iter_messages(entity, **kwargs):
-        batch.append(
-            to_message_info(
-                msg,
-                default_chat_id=default_chat_id,
-                default_chat_name=default_chat_name,
-            )
+        scanned_count += 1
+        parsed = to_message_info(
+            msg,
+            default_chat_id=default_chat_id,
+            default_chat_name=default_chat_name,
         )
-
-    found: list[MessageInfo] = []
-    reply_cache: dict[tuple[int, int], bool] = {}
-    entity_cache: dict[int, object] = {}
-    for parsed in batch:
         if time_range and not time_range.contains(parsed.date):
             continue
         if parsed.reply_to_message_id is None:
             continue
-        if not await _reply_targets_me(
-            client,
-            chat_id=parsed.chat_id,
-            replied_message_id=parsed.reply_to_message_id,
-            my_user_id=my_user_id,
-            reply_cache=reply_cache,
-            entity_cache=entity_cache,
-        ):
+        candidates.append(parsed)
+        reply_ids_by_chat.setdefault(parsed.chat_id, set()).add(parsed.reply_to_message_id)
+
+    reply_cache = await _resolve_reply_targets_to_me(
+        client,
+        reply_ids_by_chat=reply_ids_by_chat,
+        my_user_id=my_user_id,
+    )
+    found: list[MessageInfo] = []
+    for parsed in candidates:
+        reply_to_message_id = parsed.reply_to_message_id
+        if not isinstance(reply_to_message_id, int):
+            continue
+        if not reply_cache.get((parsed.chat_id, reply_to_message_id), False):
             continue
         found.append(parsed)
         if len(found) >= limit + PAGE_OVERFETCH_COUNT:
             break
 
     selected = found[:limit]
-    has_more = len(found) > limit or len(batch) >= scan_limit
+    has_more = len(found) > limit or scanned_count >= scan_limit
     next_page_offset = selected[-1].id if has_more and selected else None
     return Page(items=selected, has_more=has_more, next_offset=next_page_offset)
 
@@ -989,34 +992,48 @@ async def _collect_mentions_activities_page(
     return activities_map, has_more
 
 
-async def _reply_targets_me(
+async def _resolve_reply_targets_to_me(
     client: TelegramClient,
     *,
-    chat_id: int,
-    replied_message_id: int,
+    reply_ids_by_chat: dict[int, set[int]],
     my_user_id: int,
-    reply_cache: dict[tuple[int, int], bool],
-    entity_cache: dict[int, object],
-) -> bool:
-    key = (chat_id, replied_message_id)
-    cached = reply_cache.get(key)
-    if cached is not None:
-        return cached
+) -> dict[tuple[int, int], bool]:
+    reply_cache: dict[tuple[int, int], bool] = {}
+    for chat_id, reply_ids in reply_ids_by_chat.items():
+        if not reply_ids:
+            continue
 
-    entity = entity_cache.get(chat_id)
-    if entity is None:
         entity = await client.get_entity(chat_id)
-        entity_cache[chat_id] = entity
+        sorted_reply_ids = sorted(reply_ids)
+        for batch_ids in _chunk_ids(sorted_reply_ids, REPLY_TARGETS_BATCH_SIZE):
+            raw_messages = await client.get_messages(entity, ids=batch_ids)
+            resolved_ids: set[int] = set()
+            for replied_message in _as_message_list(raw_messages):
+                message_id = require_message_id(replied_message, context="list_replies_to_me")
+                resolved_ids.add(message_id)
+                sender_id_obj = (
+                    cast(Any, replied_message).sender_id if hasattr(replied_message, "sender_id") else None
+                )
+                is_reply_to_me = isinstance(sender_id_obj, int) and sender_id_obj == my_user_id
+                reply_cache[(chat_id, message_id)] = is_reply_to_me
 
-    replied_message = await client.get_messages(entity, ids=replied_message_id)
-    if replied_message is None:
-        reply_cache[key] = False
-        return False
+            for reply_id in batch_ids:
+                if reply_id not in resolved_ids:
+                    reply_cache[(chat_id, reply_id)] = False
 
-    sender_id_obj = cast(Any, replied_message).sender_id if hasattr(replied_message, "sender_id") else None
-    is_reply_to_me = isinstance(sender_id_obj, int) and sender_id_obj == my_user_id
-    reply_cache[key] = is_reply_to_me
-    return is_reply_to_me
+    return reply_cache
+
+
+def _as_message_list(value: object) -> list[object]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [item for item in value if item is not None]
+    return [value]
+
+
+def _chunk_ids(values: list[int], chunk_size: int) -> list[list[int]]:
+    return [values[index : index + chunk_size] for index in range(0, len(values), chunk_size)]
 
 
 def _peer_id(value: object) -> int | None:

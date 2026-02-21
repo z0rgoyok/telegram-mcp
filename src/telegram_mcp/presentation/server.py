@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -20,6 +21,45 @@ from .media_proxy_server import MediaProxyServer
 logger = logging.getLogger(__name__)
 
 
+class _SharedSessionRuntime:
+    """Process-scoped lifecycle for shared SSE runtime dependencies."""
+
+    def __init__(self, adapter: TelethonAdapter, media_proxy: MediaProxyServer) -> None:
+        self._adapter = adapter
+        self._media_proxy = media_proxy
+        self._lock = asyncio.Lock()
+        self._active_sessions = 0
+
+    async def acquire(self) -> None:
+        async with self._lock:
+            if self._active_sessions > 0:
+                self._active_sessions += 1
+                return
+
+            await self._adapter.connect()
+            try:
+                await self._media_proxy.start()
+            except Exception:
+                await self._adapter.disconnect()
+                raise
+
+            self._active_sessions = 1
+
+    async def release(self) -> None:
+        async with self._lock:
+            if self._active_sessions == 0:
+                return
+
+            self._active_sessions -= 1
+            if self._active_sessions > 0:
+                return
+
+            try:
+                await self._media_proxy.stop()
+            finally:
+                await self._adapter.disconnect()
+
+
 def create_server(
     *,
     host: str = "127.0.0.1",
@@ -29,20 +69,17 @@ def create_server(
     settings = Settings.from_env()
     adapter_impl = TelethonAdapter(settings)
     media_proxy = MediaProxyServer(adapter_impl.raw_client, settings)
+    shared_runtime = _SharedSessionRuntime(adapter_impl, media_proxy)
     reader: TelegramReader = adapter_impl
     use_cases = TelegramUseCases(reader)
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[None]:
-        await adapter_impl.connect()
+        await shared_runtime.acquire()
         try:
-            await media_proxy.start()
-            try:
-                yield
-            finally:
-                await media_proxy.stop()
+            yield
         finally:
-            await adapter_impl.disconnect()
+            await shared_runtime.release()
 
     mcp = FastMCP(
         "Telegram (read-only)",

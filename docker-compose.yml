@@ -1,10 +1,16 @@
 services:
   mcp:
     build: .
+    command:
+      - python
+      - -m
+      - telegram_mcp
+      - --transport
+      - stdio
     stdin_open: true
     env_file: .env
     ports:
-      - "8902:8902"
+      - "127.0.0.1:8902:8902"
     volumes:
       - ./var:/app/var
 
@@ -25,8 +31,8 @@ services:
       MEDIA_PROXY_PORT: 8904
       MEDIA_PROXY_PUBLIC_BASE_URL: http://localhost:8904
     ports:
-      - "8903:8000"
-      - "8904:8904"
+      - "127.0.0.1:8903:8000"
+      - "127.0.0.1:8904:8904"
     volumes:
       - ./var:/app/var
     profiles:
@@ -36,7 +42,7 @@ services:
     build: .
     command: python -m telegram_mcp.auth
     ports:
-      - "8901:8901"
+      - "127.0.0.1:8901:8901"
     env_file: .env
     volumes:
       - ./var:/app/var

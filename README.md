@@ -37,6 +37,8 @@ All MCP tools return:
 
 Important for `stdio` mode: use `--service-ports` for `mcp`. Without published port `8902`, `get_message_media` proxy URLs will be unreachable.
 
+By default, published Docker ports in this project are bound to `127.0.0.1` only.
+
 For tool errors:
 
 ```json
@@ -60,26 +62,24 @@ For tool errors:
 
 ## Tool catalog
 
-| Tool                  | Purpose                                                               |
-|-----------------------|-----------------------------------------------------------------------|
-| `resolve_chat`        | Resolve chat candidates by query (`@username`, id, title).            |
-| `list_chats`          | List dialogs with filters, search, unread-only and cursor pagination. |
-| `list_unread_chats`   | Deterministic unread triage (`unread_count`, activity).               |
-| `list_my_sent_chats`  | Aggregate chats where you sent messages in a required time range.      |
-| `list_mentions_to_me_chats` | Aggregate chats where messages mention your handle.               |
-| `get_messages`        | Read chat history with date range, search, order, cursor.             |
-| `get_message_context` | Read target message with surrounding before/after messages.           |
-| `get_thread_messages` | Read replies for a root message.                                      |
-| `search_messages`     | Global/per-chat search; empty query works as wildcard.                |
-| `search_mentions_to_me` | Search messages mentioning your handle (`@username`) across chats.  |
-| `list_replies_to_me`  | Find messages that reply to your messages (global or per chat).       |
-| `get_messages_batch`  | Read several chats in one call (`chat_ids`, `limit_per_chat`).        |
-| `list_media_messages` | Find media messages (optional `media_kind`) globally or per chat.     |
-| `list_chat_activity_summary` | Combined per-chat activity: my messages, mentions, unread count. |
-| `get_chat_snapshot`   | Quick chat snapshot (`recent_messages`, optional `pinned_messages`).  |
-| `get_message_media`   | Return message attachment URL (Telegram URL or signed HTTP proxy).    |
-| `get_auth_status`     | Read-only Telegram auth status.                                       |
-| `health_check`        | Service/provider health diagnostics.                                  |
+- `resolve_chat`: Resolve chat candidates by query (`@username`, id, title).
+- `list_chats`: List dialogs with filters, search, unread-only and cursor pagination.
+- `list_unread_chats`: Deterministic unread triage (`unread_count`, activity).
+- `list_my_sent_chats`: Aggregate chats where you sent messages in a required time range.
+- `list_mentions_to_me_chats`: Aggregate chats where messages mention your handle.
+- `get_messages`: Read chat history with date range, search, order, cursor.
+- `get_message_context`: Read target message with surrounding before/after messages.
+- `get_thread_messages`: Read replies for a root message.
+- `search_messages`: Global/per-chat search; empty query works as wildcard.
+- `search_mentions_to_me`: Search messages mentioning your handle (`@username`) across chats.
+- `list_replies_to_me`: Find messages that reply to your messages (global or per chat).
+- `get_messages_batch`: Read several chats in one call (`chat_ids`, `limit_per_chat`).
+- `list_media_messages`: Find media messages (optional `media_kind`) globally or per chat.
+- `list_chat_activity_summary`: Combined per-chat activity: my messages, mentions, unread count.
+- `get_chat_snapshot`: Quick chat snapshot (`recent_messages`, optional `pinned_messages`).
+- `get_message_media`: Return message attachment URL (Telegram URL or signed HTTP proxy).
+- `get_auth_status`: Read-only Telegram auth status.
+- `health_check`: Service/provider health diagnostics.
 
 Every tool accepts `format="json"` (default) or `format="markdown"`.
 
@@ -160,6 +160,8 @@ Open http://localhost:8901, enter phone, code, and 2FA password if needed.
   }
 }
 ```
+
+`mcp` service is pinned to `--transport stdio` in `docker-compose.yml`.
 
 If a previous `mcp` one-off container is still running, a new `docker compose run` will fail with `port is already allocated` on `8902`.
 

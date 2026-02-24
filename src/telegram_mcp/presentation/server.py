@@ -368,6 +368,11 @@ def create_server(
         message_id: int,
         response_format: str = "json",
     ) -> dict[str, Any] | str:
+        """Return media URL.
+
+        Client guidance: when `content_url` is returned, download it immediately via HTTP
+        with `curl` (example: `curl -fsSL "<content_url>" -o /tmp/media.bin`).
+        """
         payload = await execute_use_case(
             use_cases.get_message_media,
             chat_id=chat_id,

@@ -19,6 +19,8 @@ models = load_module("telegram_mcp.domain.models")
 class StubReader:
     def __init__(self) -> None:
         self._touch = 0
+        self.last_list_dialogs_kwargs: dict[str, Any] | None = None
+        self.last_list_unread_dialogs_kwargs: dict[str, Any] | None = None
 
     async def list_dialogs(
         self,
@@ -28,9 +30,19 @@ class StubReader:
         chat_filter: Any = models.ChatFilter.ALL,
         query: str | None = None,
         unread_only: bool = False,
+        folder: int | None = None,
+        dialog_filter: int | str | None = None,
     ) -> Any:
         self._touch += 1
-        _ = (limit, offset, chat_filter, query, unread_only)
+        self.last_list_dialogs_kwargs = {
+            "limit": limit,
+            "offset": offset,
+            "chat_filter": chat_filter,
+            "query": query,
+            "unread_only": unread_only,
+            "folder": folder,
+            "dialog_filter": dialog_filter,
+        }
         return models.Page(
             items=[
                 models.ChatRef(
@@ -46,9 +58,31 @@ class StubReader:
             next_offset=None,
         )
 
-    async def list_unread_dialogs(self, *, limit: int = 50, offset: int = 0) -> Any:
+    async def list_unread_dialogs(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        folder: int | None = None,
+    ) -> Any:
         self._touch += 1
-        return await self.list_dialogs(limit=limit, offset=offset)
+        self.last_list_unread_dialogs_kwargs = {
+            "limit": limit,
+            "offset": offset,
+            "folder": folder,
+        }
+        return await self.list_dialogs(limit=limit, offset=offset, folder=folder)
+
+    async def list_dialog_filters(self) -> list[Any]:
+        self._touch += 1
+        return [
+            models.DialogFilterInfo(
+                id=139,
+                title="Fix Price",
+                kind="filter",
+                peer_count=61,
+            )
+        ]
 
     async def list_my_sent_chats(
         self,
@@ -97,9 +131,15 @@ class StubReader:
             next_offset=None,
         )
 
-    async def resolve_chat(self, *, query: str, limit: int = 20) -> list[Any]:
+    async def resolve_chat(
+        self,
+        *,
+        query: str,
+        limit: int = 20,
+        dialog_filter: int | str | None = None,
+    ) -> list[Any]:
         self._touch += 1
-        _ = (query, limit)
+        _ = (query, limit, dialog_filter)
         return [
             models.ChatRef(
                 id=1,
@@ -361,6 +401,99 @@ async def test_list_chats_invalid_filter_returns_validation_error() -> None:
     use_cases = TelegramUseCases(StubReader())
 
     response = await execute_use_case(use_cases.list_chats, chat_filter="bad")
+
+    assert response["ok"] is False
+    assert response["error"]["code"] == ErrorCode.VALIDATION_ERROR.value
+
+
+@pytest.mark.asyncio
+async def test_list_chats_passes_folder_to_reader() -> None:
+    reader = StubReader()
+    use_cases = TelegramUseCases(reader)
+
+    response = await execute_use_case(use_cases.list_chats, folder=1)
+
+    assert response["ok"] is True
+    assert response["data"]["folder"] == 1
+    assert reader.last_list_dialogs_kwargs == {
+        "limit": 50,
+        "offset": 0,
+        "chat_filter": models.ChatFilter.ALL,
+        "query": None,
+        "unread_only": False,
+        "folder": 1,
+        "dialog_filter": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_unread_chats_passes_folder_to_reader() -> None:
+    reader = StubReader()
+    use_cases = TelegramUseCases(reader)
+
+    response = await execute_use_case(use_cases.list_unread_chats, folder=0)
+
+    assert response["ok"] is True
+    assert response["data"]["folder"] == 0
+    assert reader.last_list_unread_dialogs_kwargs == {
+        "limit": 50,
+        "offset": 0,
+        "folder": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_dialog_filters_returns_payload() -> None:
+    use_cases = TelegramUseCases(StubReader())
+
+    response = await execute_use_case(use_cases.list_dialog_filters)
+
+    assert response["ok"] is True
+    assert response["data"]["count"] == 1
+    assert response["data"]["items"][0] == {
+        "id": 139,
+        "title": "Fix Price",
+        "kind": "filter",
+        "peer_count": 61,
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_chats_passes_dialog_filter_to_reader() -> None:
+    reader = StubReader()
+    use_cases = TelegramUseCases(reader)
+
+    response = await execute_use_case(use_cases.list_chats, dialog_filter="Fix Price")
+
+    assert response["ok"] is True
+    assert response["data"]["dialog_filter"] == "Fix Price"
+    assert reader.last_list_dialogs_kwargs == {
+        "limit": 50,
+        "offset": 0,
+        "chat_filter": models.ChatFilter.ALL,
+        "query": None,
+        "unread_only": False,
+        "folder": None,
+        "dialog_filter": "Fix Price",
+    }
+
+
+@pytest.mark.asyncio
+async def test_resolve_chat_passes_dialog_filter_to_reader() -> None:
+    reader = StubReader()
+    use_cases = TelegramUseCases(reader)
+
+    response = await execute_use_case(use_cases.resolve_chat, query="Android Group", dialog_filter=139)
+
+    assert response["ok"] is True
+    assert response["data"]["dialog_filter"] == 139
+
+
+@pytest.mark.asyncio
+async def test_list_chats_rejects_folder_with_dialog_filter() -> None:
+    use_cases = TelegramUseCases(StubReader())
+
+    response = await execute_use_case(use_cases.list_chats, folder=1, dialog_filter="Fix Price")
 
     assert response["ok"] is False
     assert response["error"]["code"] == ErrorCode.VALIDATION_ERROR.value

@@ -11,6 +11,7 @@ from ..domain.models import (
     ChatMessagesBatchItem,
     ChatRef,
     ChatSnapshot,
+    DialogFilterInfo,
     HealthStatus,
     MediaFile,
     MentionChatActivity,
@@ -158,6 +159,15 @@ def snapshot_to_dict(snapshot: ChatSnapshot) -> dict[str, Any]:
         "chat": chat_info_to_dict(snapshot.chat),
         "recent_messages": [message_to_dict(item) for item in snapshot.recent_messages],
         "pinned_messages": [message_to_dict(item) for item in snapshot.pinned_messages],
+    }
+
+
+def dialog_filter_to_dict(dialog_filter: DialogFilterInfo) -> dict[str, Any]:
+    return {
+        "id": dialog_filter.id,
+        "title": dialog_filter.title,
+        "kind": dialog_filter.kind,
+        "peer_count": dialog_filter.peer_count,
     }
 
 

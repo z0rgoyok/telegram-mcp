@@ -62,9 +62,10 @@ For tool errors:
 
 ## Tool catalog
 
-- `resolve_chat`: Resolve chat candidates by query (`@username`, id, title).
-- `list_chats`: List dialogs with filters, search, unread-only and cursor pagination.
-- `list_unread_chats`: Deterministic unread triage (`unread_count`, activity).
+- `resolve_chat`: Resolve chat candidates by query (`@username`, id, title) with optional Telegram dialog filter (`dialog_filter` by name or id).
+- `list_chats`: List dialogs with filters, Telegram folder selection, Telegram dialog filter selection, search, unread-only and cursor pagination.
+- `list_unread_chats`: Deterministic unread triage (`unread_count`, activity) with optional Telegram folder selection.
+- `list_dialog_filters`: List available Telegram dialog filters with `id`, title and peer count.
 - `list_my_sent_chats`: Aggregate chats where you sent messages in a required time range.
 - `list_mentions_to_me_chats`: Aggregate chats where messages mention your handle.
 - `get_messages`: Read chat history with date range, search, order, cursor.
@@ -82,6 +83,36 @@ For tool errors:
 - `health_check`: Service/provider health diagnostics.
 
 Every tool accepts `format="json"` (default) or `format="markdown"`.
+
+## Chat Discovery Guide
+
+Use these rules when a client needs to find a chat quickly and predictably:
+
+- Use `resolve_chat(query=...)` when you need one concrete `chat_id` for later calls like `get_messages`.
+- Use `list_chats(...)` when you want to browse a scope and inspect several matching chats.
+- Use `dialog_filter` for custom Telegram tabs/filters created in the Telegram client.
+  Examples: `Fix Price`, `Unread`, `Работа`.
+- Use `folder=0` only for dialogs outside archive and `folder=1` only for archive.
+  `folder` does not mean custom Telegram tab/filter.
+- Do not combine `folder` and `dialog_filter` in one request.
+
+Recommended examples:
+
+- Discover available Telegram filters:
+  `list_dialog_filters()`
+- Recent normal chat by title:
+  `resolve_chat(query="Engineering")`
+- Chat that exists inside a custom Telegram filter:
+  `resolve_chat(query="Android Group", dialog_filter="Fix Price")`
+- Browse chats inside a custom filter:
+  `list_chats(dialog_filter="Fix Price", query="Android")`
+- Browse archived dialogs:
+  `list_chats(folder=1, query="Support")`
+
+Performance note:
+
+- `resolve_chat(query=...)` without `dialog_filter` may scan many dialogs and filters in large accounts.
+- If you know the custom Telegram filter name, always pass `dialog_filter` to reduce latency.
 
 Time filters are supported by:
 - `get_messages`

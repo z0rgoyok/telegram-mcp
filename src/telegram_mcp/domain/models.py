@@ -180,6 +180,14 @@ class ChatSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class DialogFilterInfo:
+    id: int
+    title: str
+    kind: str
+    peer_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class ChatMessagesBatchItem:
     chat_id: int
     chat_name: str

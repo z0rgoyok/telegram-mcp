@@ -89,6 +89,35 @@ def parse_chat_id(value: int | str | None) -> int | str:
     )
 
 
+def parse_dialog_folder(value: int | None) -> int | None:
+    if value is None:
+        return None
+    return require_int_in_range(value, "folder", minimum=0)
+
+
+def parse_dialog_filter(value: int | str | None) -> int | str | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return require_int_in_range(value, "dialog_filter", minimum=0)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            raise ToolError(
+                ErrorCode.VALIDATION_ERROR,
+                "dialog_filter cannot be empty",
+                {"field": "dialog_filter"},
+            )
+        if stripped.isdigit():
+            return require_int_in_range(int(stripped), "dialog_filter", minimum=0)
+        return stripped
+    raise ToolError(
+        ErrorCode.VALIDATION_ERROR,
+        "dialog_filter must be int or str",
+        {"field": "dialog_filter"},
+    )
+
+
 def parse_iso_datetime(value: str, field_name: str) -> datetime:
     normalized = value.strip()
     if "T" not in normalized:

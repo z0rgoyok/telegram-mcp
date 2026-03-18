@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from telethon.tl.types import Channel, Chat, User
+from telethon.utils import get_peer_id
 
 from ..domain.errors import ErrorCode, ToolError
 from ..domain.models import (
@@ -41,6 +42,13 @@ def require_entity_id(entity: object, *, context: str) -> int:
             {"context": context, "id": entity_id},
         )
     return entity_id
+
+
+def marked_chat_id(entity: object, *, context: str) -> int:
+    try:
+        return int(get_peer_id(entity))
+    except (AttributeError, TypeError, ValueError):
+        return require_entity_id(entity, context=context)
 
 
 def require_message_id(message: object, *, context: str) -> int:

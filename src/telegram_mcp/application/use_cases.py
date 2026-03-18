@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..domain.errors import ErrorCode, ToolError
-from ..domain.models import MediaKind
+from ..domain.models import MediaKind, TimeRange
 from ..domain.ports import TelegramReader
 from .cursor import (
     decode_message_cursor,
@@ -19,6 +19,7 @@ from .serializers import (
     chat_activity_to_dict,
     chat_ref_to_dict,
     context_to_dict,
+    dialog_filter_to_dict,
     health_to_dict,
     media_file_to_dict,
     mention_chat_activity_to_dict,
@@ -29,6 +30,8 @@ from .serializers import (
 from .validators import (
     parse_chat_filter,
     parse_chat_id,
+    parse_dialog_filter,
+    parse_dialog_folder,
     parse_order,
     parse_time_range,
     require_int_in_range,
@@ -40,14 +43,45 @@ class TelegramUseCases:
     def __init__(self, reader: TelegramReader) -> None:
         self._reader = reader
 
-    async def resolve_chat(self, *, query: str, limit: int = 20) -> dict[str, Any]:
+    @staticmethod
+    def _parse_required_from_date_page(
+        *,
+        limit: int,
+        cursor: str | None,
+        from_date: str | None,
+        to_date: str | None,
+    ) -> tuple[int, int, TimeRange]:
+        normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
+        offset = decode_offset_cursor(cursor)
+        time_range = parse_time_range(from_date=from_date, to_date=to_date)
+        if time_range is None or time_range.from_date is None:
+            raise ToolError(
+                ErrorCode.VALIDATION_ERROR,
+                "from_date is required",
+                {"field": "from_date"},
+            )
+        return normalized_limit, offset, time_range
+
+    async def resolve_chat(
+        self,
+        *,
+        query: str,
+        limit: int = 20,
+        dialog_filter: int | str | None = None,
+    ) -> dict[str, Any]:
         normalized_query = require_text(query, "query")
         normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
+        normalized_dialog_filter = parse_dialog_filter(dialog_filter)
 
-        chats = await self._reader.resolve_chat(query=normalized_query, limit=normalized_limit)
+        chats = await self._reader.resolve_chat(
+            query=normalized_query,
+            limit=normalized_limit,
+            dialog_filter=normalized_dialog_filter,
+        )
         return success_response(
             {
                 "query": normalized_query,
+                "dialog_filter": normalized_dialog_filter,
                 "items": [chat_ref_to_dict(chat) for chat in chats],
                 "count": len(chats),
             }
@@ -59,12 +93,22 @@ class TelegramUseCases:
         chat_filter: str = "all",
         query: str | None = None,
         unread_only: bool = False,
+        folder: int | None = None,
+        dialog_filter: int | str | None = None,
         limit: int = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
         normalized_filter = parse_chat_filter(chat_filter)
+        normalized_folder = parse_dialog_folder(folder)
+        normalized_dialog_filter = parse_dialog_filter(dialog_filter)
         normalized_query = query.strip() if isinstance(query, str) and query.strip() else None
+        if normalized_folder is not None and normalized_dialog_filter is not None:
+            raise ToolError(
+                ErrorCode.VALIDATION_ERROR,
+                "folder and dialog_filter cannot be used together",
+                {"fields": ["folder", "dialog_filter"]},
+            )
         offset = decode_offset_cursor(cursor)
 
         page = await self._reader.list_dialogs(
@@ -73,6 +117,8 @@ class TelegramUseCases:
             chat_filter=normalized_filter,
             query=normalized_query,
             unread_only=bool(unread_only),
+            folder=normalized_folder,
+            dialog_filter=normalized_dialog_filter,
         )
         next_cursor = encode_offset_cursor(page.next_offset) if page.next_offset is not None else None
         return success_response(
@@ -81,6 +127,8 @@ class TelegramUseCases:
                 "filter": normalized_filter.value,
                 "query": normalized_query,
                 "unread_only": bool(unread_only),
+                "folder": normalized_folder,
+                "dialog_filter": normalized_dialog_filter,
                 "count": len(page.items),
             },
             cursor=next_cursor,
@@ -90,22 +138,38 @@ class TelegramUseCases:
     async def list_unread_chats(
         self,
         *,
+        folder: int | None = None,
         limit: int = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
+        normalized_folder = parse_dialog_folder(folder)
         offset = decode_offset_cursor(cursor)
 
-        page = await self._reader.list_unread_dialogs(limit=normalized_limit, offset=offset)
+        page = await self._reader.list_unread_dialogs(
+            limit=normalized_limit,
+            offset=offset,
+            folder=normalized_folder,
+        )
         next_cursor = encode_offset_cursor(page.next_offset) if page.next_offset is not None else None
 
         return success_response(
             {
                 "items": [chat_ref_to_dict(chat) for chat in page.items],
+                "folder": normalized_folder,
                 "count": len(page.items),
             },
             cursor=next_cursor,
             has_more=page.has_more,
+        )
+
+    async def list_dialog_filters(self) -> dict[str, Any]:
+        filters = await self._reader.list_dialog_filters()
+        return success_response(
+            {
+                "items": [dialog_filter_to_dict(item) for item in filters],
+                "count": len(filters),
+            }
         )
 
     async def list_my_sent_chats(
@@ -116,16 +180,12 @@ class TelegramUseCases:
         from_date: str | None = None,
         to_date: str | None = None,
     ) -> dict[str, Any]:
-        normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
-        offset = decode_offset_cursor(cursor)
-        time_range = parse_time_range(from_date=from_date, to_date=to_date)
-
-        if time_range is None or time_range.from_date is None:
-            raise ToolError(
-                ErrorCode.VALIDATION_ERROR,
-                "from_date is required",
-                {"field": "from_date"},
-            )
+        normalized_limit, offset, time_range = self._parse_required_from_date_page(
+            limit=limit,
+            cursor=cursor,
+            from_date=from_date,
+            to_date=to_date,
+        )
 
         page = await self._reader.list_my_sent_chats(
             limit=normalized_limit,
@@ -458,15 +518,12 @@ class TelegramUseCases:
         from_date: str | None = None,
         to_date: str | None = None,
     ) -> dict[str, Any]:
-        normalized_limit = require_int_in_range(limit, "limit", minimum=1, maximum=100)
-        offset = decode_offset_cursor(cursor)
-        time_range = parse_time_range(from_date=from_date, to_date=to_date)
-        if time_range is None or time_range.from_date is None:
-            raise ToolError(
-                ErrorCode.VALIDATION_ERROR,
-                "from_date is required",
-                {"field": "from_date"},
-            )
+        normalized_limit, offset, time_range = self._parse_required_from_date_page(
+            limit=limit,
+            cursor=cursor,
+            from_date=from_date,
+            to_date=to_date,
+        )
         normalized_mention = await self._resolve_mention(mention)
 
         page = await self._reader.list_chat_activity_summary(

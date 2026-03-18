@@ -64,6 +64,7 @@ class FakeDialog:
     entity: object
     unread_count: int
     date: datetime
+    folder_id: int | None = None
 
 
 class FakeClient:
@@ -75,6 +76,7 @@ class FakeClient:
             1: SimpleNamespace(id=1, title="Engineering", username="eng"),
             2: SimpleNamespace(id=2, title="Support", username="support"),
             3: SimpleNamespace(id=3, title="Random", username="random"),
+            1275692770: SimpleNamespace(id=1275692770, title="Android Group", username=None),
         }
 
         self.dialogs = [
@@ -84,6 +86,7 @@ class FakeClient:
                 entity=self.entities[1],
                 unread_count=5,
                 date=datetime(2026, 1, 3, 9, 0, tzinfo=timezone.utc),
+                folder_id=1,
             ),
             FakeDialog(
                 id=2,
@@ -91,6 +94,7 @@ class FakeClient:
                 entity=self.entities[2],
                 unread_count=5,
                 date=datetime(2026, 1, 2, 9, 0, tzinfo=timezone.utc),
+                folder_id=0,
             ),
             FakeDialog(
                 id=3,
@@ -98,6 +102,7 @@ class FakeClient:
                 entity=self.entities[3],
                 unread_count=2,
                 date=datetime(2026, 1, 4, 9, 0, tzinfo=timezone.utc),
+                folder_id=None,
             ),
         ]
 
@@ -157,6 +162,19 @@ class FakeClient:
         return SimpleNamespace(id=100, first_name="Tester", last_name="User", username="tester")
 
     async def get_entity(self, chat_id: int | str) -> object:
+        if hasattr(chat_id, "channel_id") and isinstance(chat_id.channel_id, int):
+            if chat_id.channel_id in self.entities:
+                return self.entities[chat_id.channel_id]
+            raise ValueError("Entity not found")
+        if hasattr(chat_id, "chat_id") and isinstance(chat_id.chat_id, int):
+            if chat_id.chat_id in self.entities:
+                return self.entities[chat_id.chat_id]
+            raise ValueError("Entity not found")
+        if hasattr(chat_id, "user_id") and isinstance(chat_id.user_id, int):
+            if chat_id.user_id in self.entities:
+                return self.entities[chat_id.user_id]
+            raise ValueError("Entity not found")
+
         if isinstance(chat_id, str):
             key = chat_id.strip()
             if key.startswith("@"):
@@ -191,8 +209,11 @@ class FakeClient:
                 return message
         return None
 
-    async def iter_dialogs(self, limit: int) -> Any:
-        for dialog in self.dialogs[:limit]:
+    async def iter_dialogs(self, limit: int, folder: int | None = None) -> Any:
+        dialogs = self.dialogs
+        if folder is not None:
+            dialogs = [dialog for dialog in dialogs if dialog.folder_id == folder]
+        for dialog in dialogs[:limit]:
             yield dialog
 
     async def iter_messages(self, entity: Any | None, **kwargs: Any) -> Any:
@@ -238,6 +259,32 @@ class FakeClient:
             yield message
 
     async def __call__(self, request: Any) -> Any:
+        if isinstance(request, functions.messages.GetDialogFiltersRequest):
+            return SimpleNamespace(
+                filters=[
+                    types.DialogFilter(
+                        id=139,
+                        title=types.TextWithEntities(text="Fix Price", entities=[]),
+                        pinned_peers=[],
+                        include_peers=[
+                            types.InputPeerChannel(channel_id=1275692770, access_hash=0),
+                        ],
+                        exclude_peers=[],
+                        contacts=False,
+                        non_contacts=False,
+                        groups=False,
+                        broadcasts=False,
+                        bots=False,
+                        exclude_muted=False,
+                        exclude_read=False,
+                        exclude_archived=False,
+                        title_noanimate=False,
+                        emoticon="",
+                        color=0,
+                    )
+                ],
+                tags_enabled=False,
+            )
         if isinstance(request, functions.messages.SearchRequest):
             pool = [message for values in self.messages.values() for message in values]
 
@@ -308,6 +355,51 @@ async def test_list_unread_dialogs_sorted_deterministically(adapter: Any) -> Non
 
     assert [chat.id for chat in page.items] == [1, 2, 3]
     assert page.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_list_dialogs_filters_by_folder(adapter: Any) -> None:
+    page = await adapter.list_dialogs(limit=10, offset=0, folder=1)
+
+    assert [chat.id for chat in page.items] == [1]
+    assert page.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_list_unread_dialogs_filters_by_folder(adapter: Any) -> None:
+    page = await adapter.list_unread_dialogs(limit=10, offset=0, folder=0)
+
+    assert [chat.id for chat in page.items] == [2]
+    assert page.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_chat_finds_chat_from_custom_dialog_filter(adapter: Any) -> None:
+    chats = await adapter.resolve_chat(query="Android Group", limit=10)
+
+    assert any(chat.name == "Android Group" for chat in chats)
+
+
+@pytest.mark.asyncio
+async def test_list_dialogs_can_list_custom_dialog_filter_contents(adapter: Any) -> None:
+    page = await adapter.list_dialogs(limit=10, offset=0, dialog_filter="Fix Price")
+
+    assert [chat.name for chat in page.items] == ["Android Group"]
+    assert page.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_list_dialog_filters_returns_available_filters(adapter: Any) -> None:
+    items = await adapter.list_dialog_filters()
+
+    assert items == [
+        load_attr("telegram_mcp.domain.models", "DialogFilterInfo")(
+            id=139,
+            title="Fix Price",
+            kind="filter",
+            peer_count=1,
+        )
+    ]
 
 
 @pytest.mark.asyncio

@@ -93,9 +93,25 @@ def create_server(
     async def resolve_chat(
         query: str,
         limit: int = 20,
+        dialog_filter: int | str | None = None,
         response_format: str = "json",
     ) -> dict[str, Any] | str:
-        payload = await execute_use_case(use_cases.resolve_chat, query=query, limit=limit)
+        """Find chat candidates by id, @username or title.
+
+        Use this tool when you need a stable `chat_id` before calling message tools.
+
+        Guidance:
+        - If the chat is visible in a custom Telegram tab/filter like `Fix Price`, pass `dialog_filter`
+          with the filter name or id. This avoids a broad account-wide search and is much faster.
+        - If the chat is a normal recent dialog, `query` alone is enough.
+        - Prefer exact names for private groups/channels without `@username`.
+        """
+        payload = await execute_use_case(
+            use_cases.resolve_chat,
+            query=query,
+            limit=limit,
+            dialog_filter=dialog_filter,
+        )
         return _render_response("resolve_chat", payload, response_format)
 
     @mcp.tool()
@@ -103,15 +119,28 @@ def create_server(
         chat_filter: str = "all",
         query: str | None = None,
         unread_only: bool = False,
+        folder: int | None = None,
+        dialog_filter: int | str | None = None,
         limit: int = 50,
         cursor: str | None = None,
         response_format: str = "json",
     ) -> dict[str, Any] | str:
+        """List chats with optional search, unread triage, Telegram folder or dialog filter.
+
+        Guidance:
+        - Use `dialog_filter` for custom Telegram tabs/filters like `Fix Price`, `Unread`, `Work`.
+          This is the right way to search chats that exist only inside a custom client filter.
+        - Use `folder=0` for regular dialogs without archive and `folder=1` for archive.
+        - Do not combine `folder` and `dialog_filter`.
+        - Use `query` to narrow results inside the selected scope.
+        """
         payload = await execute_use_case(
             use_cases.list_chats,
             chat_filter=chat_filter,
             query=query,
             unread_only=unread_only,
+            folder=folder,
+            dialog_filter=dialog_filter,
             limit=limit,
             cursor=cursor,
         )
@@ -119,16 +148,28 @@ def create_server(
 
     @mcp.tool()
     async def list_unread_chats(
+        folder: int | None = None,
         limit: int = 50,
         cursor: str | None = None,
         response_format: str = "json",
     ) -> dict[str, Any] | str:
         payload = await execute_use_case(
             use_cases.list_unread_chats,
+            folder=folder,
             limit=limit,
             cursor=cursor,
         )
         return _render_response("list_unread_chats", payload, response_format)
+
+    @mcp.tool()
+    async def list_dialog_filters(response_format: str = "json") -> dict[str, Any] | str:
+        """List available Telegram dialog filters with ids and titles.
+
+        Use this tool before `resolve_chat` or `list_chats` when the client knows a chat is
+        inside a custom Telegram tab/filter but does not know the exact filter id or title.
+        """
+        payload = await execute_use_case(use_cases.list_dialog_filters)
+        return _render_response("list_dialog_filters", payload, response_format)
 
     @mcp.tool()
     async def list_my_sent_chats(

@@ -24,22 +24,41 @@ class ContractReader:
         chat_filter: Any = models.ChatFilter.ALL,
         query: str | None = None,
         unread_only: bool = False,
+        folder: int | None = None,
+        dialog_filter: int | str | None = None,
     ) -> Any:
         self._touch += 1
-        _ = (limit, offset, chat_filter, query, unread_only)
+        _ = (limit, offset, chat_filter, query, unread_only, folder, dialog_filter)
         return models.Page(
             items=[models.ChatRef(id=1, type=models.ChatType.GROUP, name="A")],
             has_more=False,
             next_offset=None,
         )
 
-    async def list_unread_dialogs(self, *, limit: int = 50, offset: int = 0) -> Any:
+    async def list_unread_dialogs(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        folder: int | None = None,
+    ) -> Any:
         self._touch += 1
-        _ = (limit, offset)
+        _ = (limit, offset, folder)
         return models.Page(
             items=[models.ChatRef(id=1, type=models.ChatType.GROUP, name="A", unread_count=1)],
             has_more=False,
         )
+
+    async def list_dialog_filters(self) -> list[Any]:
+        self._touch += 1
+        return [
+            models.DialogFilterInfo(
+                id=139,
+                title="Fix Price",
+                kind="filter",
+                peer_count=61,
+            )
+        ]
 
     async def list_my_sent_chats(
         self,
@@ -86,9 +105,15 @@ class ContractReader:
             has_more=False,
         )
 
-    async def resolve_chat(self, *, query: str, limit: int = 20) -> list[Any]:
+    async def resolve_chat(
+        self,
+        *,
+        query: str,
+        limit: int = 20,
+        dialog_filter: int | str | None = None,
+    ) -> list[Any]:
         self._touch += 1
-        _ = (query, limit)
+        _ = (query, limit, dialog_filter)
         return [models.ChatRef(id=1, type=models.ChatType.GROUP, name="A")]
 
     async def get_messages(
@@ -306,6 +331,7 @@ async def test_json_contract_for_all_tools() -> None:
         await execute_use_case(use_cases.resolve_chat, query="A"),
         await execute_use_case(use_cases.list_chats),
         await execute_use_case(use_cases.list_unread_chats),
+        await execute_use_case(use_cases.list_dialog_filters),
         await execute_use_case(
             use_cases.list_my_sent_chats,
             from_date="2026-01-01T00:00:00Z",

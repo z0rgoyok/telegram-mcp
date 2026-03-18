@@ -14,6 +14,7 @@ from ..domain.models import (
     ChatMessagesBatchItem,
     ChatRef,
     ChatSnapshot,
+    DialogFilterInfo,
     HealthStatus,
     MediaFile,
     MediaKind,
@@ -27,6 +28,7 @@ from ..domain.models import (
 )
 from ..domain.ports import TelegramReader
 from .config import Settings
+from .telethon_chat_ops import list_dialog_filters as list_dialog_filters_op
 from .telethon_chat_ops import list_dialogs as list_dialogs_op
 from .telethon_chat_ops import list_unread_dialogs as list_unread_dialogs_op
 from .telethon_chat_ops import resolve_chat as resolve_chat_op
@@ -124,6 +126,8 @@ class TelethonAdapter(TelegramReader):
         chat_filter: ChatFilter = ChatFilter.ALL,
         query: str | None = None,
         unread_only: bool = False,
+        folder: int | None = None,
+        dialog_filter: int | str | None = None,
     ) -> Page[ChatRef]:
         try:
             return await list_dialogs_op(
@@ -134,6 +138,8 @@ class TelethonAdapter(TelegramReader):
                 chat_filter=chat_filter,
                 query=query,
                 unread_only=unread_only,
+                folder=folder,
+                dialog_filter=dialog_filter,
             )
         except Exception as exc:
             raise self._map_error(exc) from exc
@@ -143,6 +149,7 @@ class TelethonAdapter(TelegramReader):
         *,
         limit: int = 50,
         offset: int = 0,
+        folder: int | None = None,
     ) -> Page[ChatRef]:
         try:
             return await list_unread_dialogs_op(
@@ -150,7 +157,14 @@ class TelethonAdapter(TelegramReader):
                 dialog_scan_limit=self._settings.dialog_scan_limit,
                 limit=limit,
                 offset=offset,
+                folder=folder,
             )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
+    async def list_dialog_filters(self) -> list[DialogFilterInfo]:
+        try:
+            return await list_dialog_filters_op(self._client)
         except Exception as exc:
             raise self._map_error(exc) from exc
 
@@ -159,6 +173,7 @@ class TelethonAdapter(TelegramReader):
         *,
         query: str,
         limit: int = 20,
+        dialog_filter: int | str | None = None,
     ) -> list[ChatRef]:
         try:
             return await resolve_chat_op(
@@ -166,6 +181,7 @@ class TelethonAdapter(TelegramReader):
                 dialog_scan_limit=self._settings.dialog_scan_limit,
                 query=query,
                 limit=limit,
+                dialog_filter=dialog_filter,
             )
         except Exception as exc:
             raise self._map_error(exc) from exc

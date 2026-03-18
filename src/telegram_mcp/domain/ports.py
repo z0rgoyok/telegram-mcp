@@ -10,6 +10,7 @@ from .models import (
     ChatMessagesBatchItem,
     ChatRef,
     ChatSnapshot,
+    DialogFilterInfo,
     HealthStatus,
     MediaFile,
     MediaKind,
@@ -33,6 +34,8 @@ class TelegramReader(ABC):
         chat_filter: ChatFilter = ChatFilter.ALL,
         query: str | None = None,
         unread_only: bool = False,
+        folder: int | None = None,
+        dialog_filter: int | str | None = None,
     ) -> Page[ChatRef]:
         raise NotImplementedError
 
@@ -42,7 +45,12 @@ class TelegramReader(ABC):
         *,
         limit: int = 50,
         offset: int = 0,
+        folder: int | None = None,
     ) -> Page[ChatRef]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def list_dialog_filters(self) -> list[DialogFilterInfo]:
         raise NotImplementedError
 
     @abstractmethod
@@ -72,6 +80,7 @@ class TelegramReader(ABC):
         *,
         query: str,
         limit: int = 20,
+        dialog_filter: int | str | None = None,
     ) -> list[ChatRef]:
         raise NotImplementedError
 

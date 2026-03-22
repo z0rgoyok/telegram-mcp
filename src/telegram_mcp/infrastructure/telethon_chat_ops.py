@@ -6,11 +6,22 @@ from typing import Any, cast
 
 from telethon import TelegramClient, functions
 from telethon.errors import RPCError
+from telethon.tl import types
 from telethon.tl.types import DialogFilter, DialogFilterChatlist
 from telethon.utils import get_peer_id
 
 from ..domain.errors import ErrorCode, ToolError
-from ..domain.models import ChatFilter, ChatInfo, ChatRef, DialogFilterInfo, Page, to_utc
+from ..domain.models import (
+    ChatActionResult,
+    ChatFilter,
+    ChatInfo,
+    ChatRef,
+    ChatType,
+    DialogFilterInfo,
+    MembershipAction,
+    Page,
+    to_utc,
+)
 from .telethon_helpers import (
     chat_matches_query,
     chat_rank,
@@ -69,6 +80,78 @@ async def list_dialogs(
     has_more = len(chats) > offset + limit
     next_offset = offset + limit if has_more else None
     return Page(items=sliced, has_more=has_more, next_offset=next_offset)
+
+
+async def unsubscribe_from_channel(
+    client: TelegramClient,
+    *,
+    chat_id: int | str,
+) -> ChatActionResult:
+    entity = await client.get_entity(chat_id)
+    entity_chat_type = entity_to_chat_type(entity)
+    result_chat_id = _action_result_chat_id(
+        requested_chat_id=chat_id,
+        entity=entity,
+        context="unsubscribe_from_channel",
+    )
+
+    if entity_chat_type is not ChatType.CHANNEL:
+        raise ToolError(
+            ErrorCode.VALIDATION_ERROR,
+            "Target chat is not a channel",
+            {"chat_id": result_chat_id, "chat_type": entity_chat_type.value},
+        )
+
+    input_entity = await client.get_input_entity(entity)
+    if not isinstance(input_entity, types.InputPeerChannel):
+        raise ToolError(
+            ErrorCode.PROVIDER_ERROR,
+            "Telegram entity is not a channel peer",
+            {"chat_id": result_chat_id},
+        )
+
+    await client(functions.channels.LeaveChannelRequest(input_entity))
+    return ChatActionResult(
+        chat_id=result_chat_id,
+        chat_name=entity_name(entity),
+        chat_type=ChatType.CHANNEL,
+        action=MembershipAction.UNSUBSCRIBED,
+    )
+
+
+async def leave_chat(
+    client: TelegramClient,
+    *,
+    chat_id: int | str,
+) -> ChatActionResult:
+    entity = await client.get_entity(chat_id)
+    entity_chat_type = entity_to_chat_type(entity)
+    result_chat_id = _action_result_chat_id(
+        requested_chat_id=chat_id,
+        entity=entity,
+        context="leave_chat",
+    )
+
+    if entity_chat_type is ChatType.CHANNEL:
+        raise ToolError(
+            ErrorCode.VALIDATION_ERROR,
+            "Target chat is a channel, use unsubscribe_from_channel",
+            {"chat_id": result_chat_id, "chat_type": entity_chat_type.value},
+        )
+    if entity_chat_type is ChatType.USER:
+        raise ToolError(
+            ErrorCode.VALIDATION_ERROR,
+            "Target chat is not a group chat",
+            {"chat_id": result_chat_id, "chat_type": entity_chat_type.value},
+        )
+
+    await client.delete_dialog(entity)
+    return ChatActionResult(
+        chat_id=result_chat_id,
+        chat_name=entity_name(entity),
+        chat_type=entity_chat_type,
+        action=MembershipAction.LEFT,
+    )
 
 
 async def list_unread_dialogs(
@@ -442,6 +525,17 @@ def _dialog_filter_kind(value: object) -> str:
     if isinstance(value, DialogFilter):
         return "filter"
     return "unknown"
+
+
+def _action_result_chat_id(
+    *,
+    requested_chat_id: int | str,
+    entity: object,
+    context: str,
+) -> int:
+    if isinstance(requested_chat_id, int):
+        return requested_chat_id
+    return marked_chat_id(entity, context=context)
 
 
 def _peer_chat_id(peer: object) -> int | None:

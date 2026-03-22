@@ -116,6 +116,34 @@ class ContractReader:
         _ = (query, limit, dialog_filter)
         return [models.ChatRef(id=1, type=models.ChatType.GROUP, name="A")]
 
+    async def unsubscribe_from_channel(
+        self,
+        *,
+        chat_id: int | str,
+    ) -> Any:
+        self._touch += 1
+        _ = chat_id
+        return models.ChatActionResult(
+            chat_id=11,
+            chat_name="Announcements",
+            chat_type=models.ChatType.CHANNEL,
+            action=models.MembershipAction.UNSUBSCRIBED,
+        )
+
+    async def leave_chat(
+        self,
+        *,
+        chat_id: int | str,
+    ) -> Any:
+        self._touch += 1
+        _ = chat_id
+        return models.ChatActionResult(
+            chat_id=12,
+            chat_name="A",
+            chat_type=models.ChatType.GROUP,
+            action=models.MembershipAction.LEFT,
+        )
+
     async def get_messages(
         self,
         *,
@@ -332,6 +360,8 @@ async def test_json_contract_for_all_tools() -> None:
         await execute_use_case(use_cases.list_chats),
         await execute_use_case(use_cases.list_unread_chats),
         await execute_use_case(use_cases.list_dialog_filters),
+        await execute_use_case(use_cases.unsubscribe_from_channel, chat_id=11),
+        await execute_use_case(use_cases.leave_chat, chat_id=12),
         await execute_use_case(
             use_cases.list_my_sent_chats,
             from_date="2026-01-01T00:00:00Z",

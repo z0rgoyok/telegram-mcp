@@ -5,6 +5,7 @@ from typing import Any
 
 from ..domain.models import (
     AuthStatus,
+    ChatActionResult,
     ChatActivity,
     ChatActivitySummary,
     ChatInfo,
@@ -51,6 +52,15 @@ def chat_info_to_dict(chat: ChatInfo) -> dict[str, Any]:
         "username": chat.username,
         "unread_count": chat.unread_count,
         "last_activity": iso_utc(chat.last_activity),
+    }
+
+
+def chat_action_result_to_dict(result: ChatActionResult) -> dict[str, Any]:
+    return {
+        "chat_id": result.chat_id,
+        "chat_name": result.chat_name,
+        "chat_type": result.chat_type.value,
+        "action": result.action.value,
     }
 
 

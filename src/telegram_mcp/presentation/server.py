@@ -82,7 +82,7 @@ def create_server(
             await shared_runtime.release()
 
     mcp = FastMCP(
-        "Telegram (read-only)",
+        "Telegram",
         lifespan=lifespan,
         host=host,
         port=port,
@@ -170,6 +170,36 @@ def create_server(
         """
         payload = await execute_use_case(use_cases.list_dialog_filters)
         return _render_response("list_dialog_filters", payload, response_format)
+
+    @mcp.tool()
+    async def unsubscribe_from_channel(
+        chat_id: int | str,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        """Unsubscribe from a broadcast channel.
+
+        Use this tool only for channels. For groups and chats use `leave_chat`.
+        """
+        payload = await execute_use_case(
+            use_cases.unsubscribe_from_channel,
+            chat_id=chat_id,
+        )
+        return _render_response("unsubscribe_from_channel", payload, response_format)
+
+    @mcp.tool()
+    async def leave_chat(
+        chat_id: int | str,
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        """Leave a group chat or megagroup.
+
+        Use this tool only for chats/groups. For broadcast channels use `unsubscribe_from_channel`.
+        """
+        payload = await execute_use_case(
+            use_cases.leave_chat,
+            chat_id=chat_id,
+        )
+        return _render_response("leave_chat", payload, response_format)
 
     @mcp.tool()
     async def list_my_sent_chats(

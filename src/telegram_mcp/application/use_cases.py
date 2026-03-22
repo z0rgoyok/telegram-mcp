@@ -15,6 +15,7 @@ from .responses import success_response
 from .serializers import (
     auth_status_to_dict,
     batch_item_to_dict,
+    chat_action_result_to_dict,
     chat_activity_summary_to_dict,
     chat_activity_to_dict,
     chat_ref_to_dict,
@@ -171,6 +172,24 @@ class TelegramUseCases:
                 "count": len(filters),
             }
         )
+
+    async def unsubscribe_from_channel(
+        self,
+        *,
+        chat_id: int | str,
+    ) -> dict[str, Any]:
+        normalized_chat_id = parse_chat_id(chat_id)
+        result = await self._reader.unsubscribe_from_channel(chat_id=normalized_chat_id)
+        return success_response(chat_action_result_to_dict(result))
+
+    async def leave_chat(
+        self,
+        *,
+        chat_id: int | str,
+    ) -> dict[str, Any]:
+        normalized_chat_id = parse_chat_id(chat_id)
+        result = await self._reader.leave_chat(chat_id=normalized_chat_id)
+        return success_response(chat_action_result_to_dict(result))
 
     async def list_my_sent_chats(
         self,

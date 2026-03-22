@@ -21,6 +21,8 @@ class StubReader:
         self._touch = 0
         self.last_list_dialogs_kwargs: dict[str, Any] | None = None
         self.last_list_unread_dialogs_kwargs: dict[str, Any] | None = None
+        self.last_unsubscribe_from_channel_chat_id: int | str | None = None
+        self.last_leave_chat_chat_id: int | str | None = None
 
     async def list_dialogs(
         self,
@@ -150,6 +152,34 @@ class StubReader:
                 last_activity=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
             )
         ]
+
+    async def unsubscribe_from_channel(
+        self,
+        *,
+        chat_id: int | str,
+    ) -> Any:
+        self._touch += 1
+        self.last_unsubscribe_from_channel_chat_id = chat_id
+        return models.ChatActionResult(
+            chat_id=int(chat_id),
+            chat_name="Announcements",
+            chat_type=models.ChatType.CHANNEL,
+            action=models.MembershipAction.UNSUBSCRIBED,
+        )
+
+    async def leave_chat(
+        self,
+        *,
+        chat_id: int | str,
+    ) -> Any:
+        self._touch += 1
+        self.last_leave_chat_chat_id = chat_id
+        return models.ChatActionResult(
+            chat_id=int(chat_id),
+            chat_name="Engineering",
+            chat_type=models.ChatType.GROUP,
+            action=models.MembershipAction.LEFT,
+        )
 
     async def get_messages(
         self,
@@ -456,6 +486,40 @@ async def test_list_dialog_filters_returns_payload() -> None:
         "kind": "filter",
         "peer_count": 61,
     }
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_from_channel_passes_normalized_chat_id_to_reader() -> None:
+    reader = StubReader()
+    use_cases = TelegramUseCases(reader)
+
+    response = await execute_use_case(use_cases.unsubscribe_from_channel, chat_id="-100123")
+
+    assert response["ok"] is True
+    assert response["data"] == {
+        "chat_id": -100123,
+        "chat_name": "Announcements",
+        "chat_type": "channel",
+        "action": "unsubscribed",
+    }
+    assert reader.last_unsubscribe_from_channel_chat_id == -100123
+
+
+@pytest.mark.asyncio
+async def test_leave_chat_passes_normalized_chat_id_to_reader() -> None:
+    reader = StubReader()
+    use_cases = TelegramUseCases(reader)
+
+    response = await execute_use_case(use_cases.leave_chat, chat_id="42")
+
+    assert response["ok"] is True
+    assert response["data"] == {
+        "chat_id": 42,
+        "chat_name": "Engineering",
+        "chat_type": "group",
+        "action": "left",
+    }
+    assert reader.last_leave_chat_chat_id == 42
 
 
 @pytest.mark.asyncio

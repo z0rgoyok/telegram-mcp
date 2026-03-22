@@ -8,6 +8,7 @@ from telethon.errors import FloodWaitError, RPCError
 from ..domain.errors import ErrorCode, ToolError
 from ..domain.models import (
     AuthStatus,
+    ChatActionResult,
     ChatActivity,
     ChatActivitySummary,
     ChatFilter,
@@ -28,10 +29,12 @@ from ..domain.models import (
 )
 from ..domain.ports import TelegramReader
 from .config import Settings
+from .telethon_chat_ops import leave_chat as leave_chat_op
 from .telethon_chat_ops import list_dialog_filters as list_dialog_filters_op
 from .telethon_chat_ops import list_dialogs as list_dialogs_op
 from .telethon_chat_ops import list_unread_dialogs as list_unread_dialogs_op
 from .telethon_chat_ops import resolve_chat as resolve_chat_op
+from .telethon_chat_ops import unsubscribe_from_channel as unsubscribe_from_channel_op
 from .telethon_helpers import maybe_await
 from .telethon_message_ops import (
     get_chat_snapshot as get_chat_snapshot_op,
@@ -182,6 +185,32 @@ class TelethonAdapter(TelegramReader):
                 query=query,
                 limit=limit,
                 dialog_filter=dialog_filter,
+            )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
+    async def unsubscribe_from_channel(
+        self,
+        *,
+        chat_id: int | str,
+    ) -> ChatActionResult:
+        try:
+            return await unsubscribe_from_channel_op(
+                self._client,
+                chat_id=chat_id,
+            )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
+    async def leave_chat(
+        self,
+        *,
+        chat_id: int | str,
+    ) -> ChatActionResult:
+        try:
+            return await leave_chat_op(
+                self._client,
+                chat_id=chat_id,
             )
         except Exception as exc:
             raise self._map_error(exc) from exc

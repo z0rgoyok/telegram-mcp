@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 
 from .models import (
     AuthStatus,
+    ChatActionResult,
     ChatActivity,
     ChatActivitySummary,
     ChatFilter,
@@ -82,6 +83,22 @@ class TelegramReader(ABC):
         limit: int = 20,
         dialog_filter: int | str | None = None,
     ) -> list[ChatRef]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def unsubscribe_from_channel(
+        self,
+        *,
+        chat_id: int | str,
+    ) -> ChatActionResult:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def leave_chat(
+        self,
+        *,
+        chat_id: int | str,
+    ) -> ChatActionResult:
         raise NotImplementedError
 
     @abstractmethod

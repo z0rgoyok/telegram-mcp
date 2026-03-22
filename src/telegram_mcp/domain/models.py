@@ -21,6 +21,11 @@ class ChatFilter(str, Enum):
     USERS = "users"
 
 
+class MembershipAction(str, Enum):
+    UNSUBSCRIBED = "unsubscribed"
+    LEFT = "left"
+
+
 class MessageOrder(str, Enum):
     DESC = "desc"
     ASC = "asc"
@@ -88,6 +93,14 @@ class ChatRef:
     username: str | None = None
     unread_count: int = 0
     last_activity: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ChatActionResult:
+    chat_id: int
+    chat_name: str
+    chat_type: ChatType
+    action: MembershipAction
 
 
 @dataclass(frozen=True, slots=True)

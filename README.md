@@ -1,10 +1,10 @@
 main goals:
-- read-only
+- safe Telegram access for automation
 - media proxy so agent can see images 
 
 # telegram-mcp
 
-Read-only MCP server for accessing your personal Telegram account from Claude Code.
+Telegram MCP server for accessing your personal Telegram account from Claude Code.
 
 ## v2 highlights
 
@@ -66,6 +66,8 @@ For tool errors:
 - `list_chats`: List dialogs with filters, Telegram folder selection, Telegram dialog filter selection, search, unread-only and cursor pagination.
 - `list_unread_chats`: Deterministic unread triage (`unread_count`, activity) with optional Telegram folder selection.
 - `list_dialog_filters`: List available Telegram dialog filters with `id`, title and peer count.
+- `unsubscribe_from_channel`: Unsubscribe from a broadcast channel by `chat_id` or `@username`.
+- `leave_chat`: Leave a group chat or megagroup by `chat_id`.
 - `list_my_sent_chats`: Aggregate chats where you sent messages in a required time range.
 - `list_mentions_to_me_chats`: Aggregate chats where messages mention your handle.
 - `get_messages`: Read chat history with date range, search, order, cursor.
@@ -258,7 +260,9 @@ pytest -q
 
 CI runs the same gates plus `docker compose config` smoke check.
 
-## Read-only invariant
+## Mutation boundary
 
 This project does not expose send/edit/delete message tools.
-All MCP operations are read-only by design.
+The only write operations are explicit membership actions:
+- `unsubscribe_from_channel`
+- `leave_chat`

@@ -17,6 +17,31 @@ MessageOrder = load_attr("telegram_mcp.domain.models", "MessageOrder")
 TimeRange = load_attr("telegram_mcp.domain.models", "TimeRange")
 Settings = load_attr("telegram_mcp.infrastructure.config", "Settings")
 TelethonAdapter = load_attr("telegram_mcp.infrastructure.telethon_adapter", "TelethonAdapter")
+ToolError = load_attr("telegram_mcp.domain.errors", "ToolError")
+
+
+def make_group(chat_id: int, title: str) -> types.Chat:
+    return types.Chat(
+        id=chat_id,
+        title=title,
+        photo=types.ChatPhotoEmpty(),
+        participants_count=10,
+        date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        version=0,
+    )
+
+
+def make_channel(channel_id: int, title: str, username: str | None = None) -> types.Channel:
+    return types.Channel(
+        id=channel_id,
+        title=title,
+        photo=types.ChatPhotoEmpty(),
+        date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        broadcast=True,
+        megagroup=False,
+        access_hash=0,
+        username=username,
+    )
 
 
 @dataclass
@@ -71,12 +96,15 @@ class FakeClient:
     def __init__(self) -> None:
         self._connected = True
         self._authorized = True
+        self.leave_channel_requests: list[int] = []
+        self.deleted_dialogs: list[int] = []
 
         self.entities = {
             1: SimpleNamespace(id=1, title="Engineering", username="eng"),
             2: SimpleNamespace(id=2, title="Support", username="support"),
             3: SimpleNamespace(id=3, title="Random", username="random"),
-            1275692770: SimpleNamespace(id=1275692770, title="Android Group", username=None),
+            10: make_group(10, "Engineering"),
+            1275692770: make_channel(1275692770, "Android Group"),
         }
 
         self.dialogs = [
@@ -193,9 +221,21 @@ class FakeClient:
         raise ValueError("Entity not found")
 
     async def get_input_entity(self, entity: Any) -> Any:
+        if isinstance(entity, types.Channel):
+            return types.InputPeerChannel(channel_id=entity.id, access_hash=entity.access_hash or 0)
+        if isinstance(entity, types.Chat):
+            return types.InputPeerChat(chat_id=entity.id)
+        if isinstance(entity, types.User):
+            return types.InputPeerUser(user_id=entity.id, access_hash=entity.access_hash or 0)
         if hasattr(entity, "id") and isinstance(entity.id, int):
             return types.InputPeerUser(user_id=entity.id, access_hash=0)
         raise ValueError("Entity not found")
+
+    async def delete_dialog(self, entity: Any, *, revoke: bool = False) -> None:
+        _ = revoke
+        if not hasattr(entity, "id") or not isinstance(entity.id, int):
+            raise ValueError("Entity not found")
+        self.deleted_dialogs.append(entity.id)
 
     async def get_messages(self, entity: Any, ids: int | list[int]) -> FakeMessage | list[FakeMessage] | None:
         chat_id = entity.id
@@ -318,6 +358,11 @@ class FakeClient:
                 for item in selected
             ]
             return SimpleNamespace(messages=messages, users=[], chats=list(self.entities.values()))
+        if isinstance(request, functions.channels.LeaveChannelRequest):
+            channel = request.channel
+            if hasattr(channel, "channel_id") and isinstance(channel.channel_id, int):
+                self.leave_channel_requests.append(channel.channel_id)
+                return SimpleNamespace()
 
         raise AssertionError(f"Unsupported request type: {type(request).__name__}")
 
@@ -400,6 +445,40 @@ async def test_list_dialog_filters_returns_available_filters(adapter: Any) -> No
             peer_count=1,
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_from_channel_leaves_broadcast_channel(adapter: Any) -> None:
+    result = await adapter.unsubscribe_from_channel(chat_id=1275692770)
+
+    assert result.chat_id == 1275692770
+    assert result.chat_name == "Android Group"
+    assert result.chat_type.value == "channel"
+    assert result.action.value == "unsubscribed"
+    assert adapter._client.leave_channel_requests == [1275692770]
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_from_channel_rejects_group(adapter: Any) -> None:
+    with pytest.raises(ToolError, match="not a channel"):
+        await adapter.unsubscribe_from_channel(chat_id=1)
+
+
+@pytest.mark.asyncio
+async def test_leave_chat_deletes_group_dialog(adapter: Any) -> None:
+    result = await adapter.leave_chat(chat_id=10)
+
+    assert result.chat_id == 10
+    assert result.chat_name == "Engineering"
+    assert result.chat_type.value == "group"
+    assert result.action.value == "left"
+    assert adapter._client.deleted_dialogs == [10]
+
+
+@pytest.mark.asyncio
+async def test_leave_chat_rejects_channel(adapter: Any) -> None:
+    with pytest.raises(ToolError, match="use unsubscribe_from_channel"):
+        await adapter.leave_chat(chat_id=1275692770)
 
 
 @pytest.mark.asyncio

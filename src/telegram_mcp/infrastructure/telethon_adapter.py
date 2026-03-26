@@ -11,6 +11,7 @@ from ..domain.models import (
     ChatActionResult,
     ChatActivity,
     ChatActivitySummary,
+    ChatExport,
     ChatFilter,
     ChatMessagesBatchItem,
     ChatRef,
@@ -36,6 +37,9 @@ from .telethon_chat_ops import list_unread_dialogs as list_unread_dialogs_op
 from .telethon_chat_ops import resolve_chat as resolve_chat_op
 from .telethon_chat_ops import unsubscribe_from_channel as unsubscribe_from_channel_op
 from .telethon_helpers import maybe_await
+from .telethon_message_ops import (
+    export_chat as export_chat_op,
+)
 from .telethon_message_ops import (
     get_chat_snapshot as get_chat_snapshot_op,
 )
@@ -467,6 +471,29 @@ class TelethonAdapter(TelegramReader):
                 chat_id=chat_id,
                 message_id=message_id,
                 max_bytes=self._settings.media_download_limit_bytes,
+                proxy_public_base_url=self._settings.media_proxy_public_base_url,
+                proxy_token_secret=self._settings.media_proxy_token_secret,
+                proxy_token_ttl_seconds=self._settings.media_proxy_token_ttl_seconds,
+            )
+        except Exception as exc:
+            raise self._map_error(exc) from exc
+
+    async def export_chat(
+        self,
+        *,
+        chat_id: int | str,
+        time_range: TimeRange | None = None,
+        include_media: bool = True,
+        order: MessageOrder = MessageOrder.ASC,
+    ) -> ChatExport:
+        try:
+            return await export_chat_op(
+                self._client,
+                dialog_scan_limit=self._settings.dialog_scan_limit,
+                chat_id=chat_id,
+                time_range=time_range,
+                include_media=include_media,
+                order=order,
                 proxy_public_base_url=self._settings.media_proxy_public_base_url,
                 proxy_token_secret=self._settings.media_proxy_token_secret,
                 proxy_token_ttl_seconds=self._settings.media_proxy_token_ttl_seconds,

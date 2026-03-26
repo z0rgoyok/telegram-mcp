@@ -38,6 +38,30 @@ services:
     profiles:
       - sse
 
+  mcp-http:
+    build: .
+    command:
+      - python
+      - -m
+      - telegram_mcp
+      - --transport
+      - streamable-http
+      - --http-host
+      - 0.0.0.0
+      - --http-port
+      - "8000"
+    env_file: .env
+    environment:
+      MEDIA_PROXY_PORT: 8906
+      MEDIA_PROXY_PUBLIC_BASE_URL: http://localhost:8906
+    ports:
+      - "127.0.0.1:8905:8000"
+      - "127.0.0.1:8906:8906"
+    volumes:
+      - ./var:/app/var
+    profiles:
+      - http
+
   auth:
     build: .
     command: python -m telegram_mcp.auth

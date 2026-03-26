@@ -707,3 +707,14 @@ async def test_get_message_media_prefers_direct_telegram_url(adapter: Any) -> No
 
     assert media_file.url_source.value == "telegram"
     assert media_file.content_url == "https://cdn.telegram.org/file/23.jpg"
+
+
+@pytest.mark.asyncio
+async def test_export_chat_returns_full_chat_with_media_urls(adapter: Any) -> None:
+    chat_export = await adapter.export_chat(chat_id=1, include_media=True)
+
+    assert chat_export.chat.id == 1
+    assert chat_export.messages[0].message.id == 10
+    assert chat_export.messages[-1].message.id == 23
+    assert chat_export.messages[-1].media_file is not None
+    assert chat_export.messages[-1].media_file.content_url.startswith("http://proxy.test/media/")

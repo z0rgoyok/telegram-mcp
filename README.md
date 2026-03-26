@@ -81,6 +81,7 @@ For tool errors:
 - `list_chat_activity_summary`: Combined per-chat activity: my messages, mentions, unread count.
 - `get_chat_snapshot`: Quick chat snapshot (`recent_messages`, optional `pinned_messages`).
 - `get_message_media`: Return message attachment URL (Telegram URL or signed HTTP proxy).
+- `export_chat`: Export one whole chat as a single JSON payload, optionally enriched with media URLs.
 - `get_auth_status`: Read-only Telegram auth status.
 - `health_check`: Service/provider health diagnostics.
 
@@ -229,6 +230,32 @@ Stop SSE server:
 ```bash
 docker compose --profile sse stop mcp-sse
 docker compose --profile sse rm -f mcp-sse
+```
+
+#### Option C: Streamable HTTP for Codex (shared long-lived server)
+
+Start background HTTP server:
+
+```bash
+docker compose --profile http up -d mcp-http
+```
+
+Endpoints:
+
+- MCP endpoint: `http://localhost:8905/mcp`
+- Media proxy endpoint: `http://localhost:8906/media/{token}`
+
+Codex example:
+
+```bash
+codex mcp add telegram --url http://localhost:8905/mcp
+```
+
+Stop HTTP server:
+
+```bash
+docker compose --profile http stop mcp-http
+docker compose --profile http rm -f mcp-http
 ```
 
 ## Architecture

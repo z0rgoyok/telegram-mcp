@@ -177,6 +177,18 @@ class MediaFile:
 
 
 @dataclass(frozen=True, slots=True)
+class ExportedMessage:
+    message: MessageInfo
+    media_file: MediaFile | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ChatExport:
+    chat: ChatInfo
+    messages: list[ExportedMessage]
+
+
+@dataclass(frozen=True, slots=True)
 class MessageRef:
     chat_id: int
     message_id: int

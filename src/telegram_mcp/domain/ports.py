@@ -7,6 +7,7 @@ from .models import (
     ChatActionResult,
     ChatActivity,
     ChatActivitySummary,
+    ChatExport,
     ChatFilter,
     ChatMessagesBatchItem,
     ChatRef,
@@ -224,6 +225,17 @@ class TelegramReader(ABC):
         chat_id: int | str,
         message_id: int,
     ) -> MediaFile:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def export_chat(
+        self,
+        *,
+        chat_id: int | str,
+        time_range: TimeRange | None = None,
+        include_media: bool = True,
+        order: MessageOrder = MessageOrder.ASC,
+    ) -> ChatExport:
         raise NotImplementedError
 
     @abstractmethod

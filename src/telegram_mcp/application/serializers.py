@@ -8,11 +8,13 @@ from ..domain.models import (
     ChatActionResult,
     ChatActivity,
     ChatActivitySummary,
+    ChatExport,
     ChatInfo,
     ChatMessagesBatchItem,
     ChatRef,
     ChatSnapshot,
     DialogFilterInfo,
+    ExportedMessage,
     HealthStatus,
     MediaFile,
     MentionChatActivity,
@@ -158,6 +160,20 @@ def media_file_to_dict(media_file: MediaFile) -> dict[str, Any]:
         "size_bytes": media_file.size_bytes,
         "content_url": media_file.content_url,
         "url_source": media_file.url_source.value,
+    }
+
+
+def exported_message_to_dict(item: ExportedMessage) -> dict[str, Any]:
+    payload = message_to_dict(item.message)
+    payload["media_file"] = media_file_to_dict(item.media_file) if item.media_file is not None else None
+    return payload
+
+
+def chat_export_to_dict(chat_export: ChatExport) -> dict[str, Any]:
+    return {
+        "chat": chat_info_to_dict(chat_export.chat),
+        "messages": [exported_message_to_dict(item) for item in chat_export.messages],
+        "count": len(chat_export.messages),
     }
 
 

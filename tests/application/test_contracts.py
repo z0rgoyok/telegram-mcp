@@ -329,6 +329,44 @@ class ContractReader:
             url_source=models.MediaUrlSource.PROXY,
         )
 
+    async def export_chat(
+        self,
+        *,
+        chat_id: int | str,
+        time_range: Any = None,
+        include_media: bool = True,
+        order: Any = models.MessageOrder.ASC,
+    ) -> Any:
+        self._touch += 1
+        _ = (chat_id, time_range, include_media, order)
+        chat = models.ChatInfo(id=1, type=models.ChatType.GROUP, name="A", unread_count=0)
+        message = models.MessageInfo(
+            id=1,
+            date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            sender="Tester",
+            text="hello",
+            chat_id=1,
+            chat_name="A",
+        )
+        media_file = (
+            models.MediaFile(
+                chat_id=1,
+                message_id=1,
+                kind=models.MediaKind.PHOTO,
+                mime_type="image/jpeg",
+                file_name="image.jpg",
+                size_bytes=4,
+                content_url="http://proxy.local/media/token",
+                url_source=models.MediaUrlSource.PROXY,
+            )
+            if include_media
+            else None
+        )
+        return models.ChatExport(
+            chat=chat,
+            messages=[models.ExportedMessage(message=message, media_file=media_file)],
+        )
+
     async def get_auth_status(self) -> Any:
         self._touch += 1
         return models.AuthStatus(
@@ -384,6 +422,7 @@ async def test_json_contract_for_all_tools() -> None:
         ),
         await execute_use_case(use_cases.get_chat_snapshot, chat_id=1),
         await execute_use_case(use_cases.get_message_media, chat_id=1, message_id=1),
+        await execute_use_case(use_cases.export_chat, chat_id=1),
         await execute_use_case(use_cases.get_auth_status),
         await execute_use_case(use_cases.health_check),
     ]

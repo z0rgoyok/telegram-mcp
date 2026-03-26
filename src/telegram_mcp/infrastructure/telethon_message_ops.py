@@ -11,8 +11,10 @@ from ..domain.errors import ErrorCode, ToolError
 from ..domain.models import (
     ChatActivity,
     ChatActivitySummary,
+    ChatExport,
     ChatMessagesBatchItem,
     ChatSnapshot,
+    ExportedMessage,
     MediaFile,
     MediaKind,
     MediaUrlSource,
@@ -695,6 +697,59 @@ async def get_message_media(
     )
 
 
+async def export_chat(
+    client: TelegramClient,
+    *,
+    dialog_scan_limit: int,
+    chat_id: int | str,
+    time_range: TimeRange | None,
+    include_media: bool,
+    order: MessageOrder,
+    proxy_public_base_url: str,
+    proxy_token_secret: str,
+    proxy_token_ttl_seconds: int,
+) -> ChatExport:
+    entity = await client.get_entity(chat_id)
+    default_chat_id = require_entity_id(entity, context="export_chat")
+    chat_name = entity_name(entity)
+    chat_info = await load_chat_info(
+        client,
+        dialog_scan_limit=dialog_scan_limit,
+        entity=entity,
+    )
+
+    kwargs: dict[str, object] = {}
+    if time_range and time_range.to_date:
+        kwargs["offset_date"] = time_range.to_date
+
+    items: list[ExportedMessage] = []
+    async for msg in client.iter_messages(entity, **kwargs):
+        parsed = to_message_info(
+            msg,
+            default_chat_id=default_chat_id,
+            default_chat_name=chat_name,
+        )
+        if time_range and not time_range.contains(parsed.date):
+            continue
+
+        media_file = None
+        if include_media and parsed.media is not None:
+            media_file = _build_media_file_from_message(
+                entity=entity,
+                message=msg,
+                media=parsed.media,
+                proxy_public_base_url=proxy_public_base_url,
+                proxy_token_secret=proxy_token_secret,
+                proxy_token_ttl_seconds=proxy_token_ttl_seconds,
+            )
+        items.append(ExportedMessage(message=parsed, media_file=media_file))
+
+    if order is MessageOrder.ASC:
+        items.reverse()
+
+    return ChatExport(chat=chat_info, messages=items)
+
+
 def _contains_mention(text: str, mention_handle: str) -> bool:
     if not text or not mention_handle:
         return False
@@ -749,6 +804,49 @@ def _build_global_search_request(
 def _extract_message_like_items(result: object) -> list[object]:
     payload = cast(Any, result)
     return [item for item in payload.messages if _is_message_like(item)]
+
+
+def _build_media_file_from_message(
+    *,
+    entity: object,
+    message: object,
+    media: Any,
+    proxy_public_base_url: str,
+    proxy_token_secret: str,
+    proxy_token_ttl_seconds: int,
+) -> MediaFile:
+    normalized_chat_id = require_entity_id(entity, context="export_chat")
+    normalized_message_id = require_message_id(message, context="export_chat")
+    direct_media_url = extract_direct_media_url(message)
+    if direct_media_url:
+        return MediaFile(
+            chat_id=normalized_chat_id,
+            message_id=normalized_message_id,
+            kind=media.kind,
+            mime_type=media.mime_type,
+            file_name=media.file_name,
+            size_bytes=media.size_bytes,
+            content_url=direct_media_url,
+            url_source=MediaUrlSource.TELEGRAM,
+        )
+
+    proxy_media_url = build_proxy_media_url(
+        base_url=proxy_public_base_url,
+        chat_id=normalized_chat_id,
+        message_id=normalized_message_id,
+        secret=proxy_token_secret,
+        ttl_seconds=proxy_token_ttl_seconds,
+    )
+    return MediaFile(
+        chat_id=normalized_chat_id,
+        message_id=normalized_message_id,
+        kind=media.kind,
+        mime_type=media.mime_type,
+        file_name=media.file_name,
+        size_bytes=media.size_bytes,
+        content_url=proxy_media_url,
+        url_source=MediaUrlSource.PROXY,
+    )
 
 
 def _message_date(value: object) -> datetime | None:

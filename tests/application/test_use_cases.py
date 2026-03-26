@@ -397,6 +397,52 @@ class StubReader:
             url_source=models.MediaUrlSource.PROXY,
         )
 
+    async def export_chat(
+        self,
+        *,
+        chat_id: int | str,
+        time_range: Any = None,
+        include_media: bool = True,
+        order: Any = models.MessageOrder.ASC,
+    ) -> Any:
+        self._touch += 1
+        _ = (chat_id, time_range, include_media, order)
+        chat = models.ChatInfo(
+            id=1,
+            type=models.ChatType.GROUP,
+            name="Engineering",
+            unread_count=3,
+            username="eng",
+            last_activity=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
+        )
+        message = models.MessageInfo(
+            id=101,
+            date=datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc),
+            sender="alice",
+            sender_id=42,
+            text="hello",
+            chat_id=1,
+            chat_name="Engineering",
+        )
+        media_file = (
+            models.MediaFile(
+                chat_id=1,
+                message_id=101,
+                kind=models.MediaKind.PHOTO,
+                mime_type="image/jpeg",
+                file_name="task.jpg",
+                size_bytes=4,
+                content_url="http://proxy.local/media/token",
+                url_source=models.MediaUrlSource.PROXY,
+            )
+            if include_media
+            else None
+        )
+        return models.ChatExport(
+            chat=chat,
+            messages=[models.ExportedMessage(message=message, media_file=media_file)],
+        )
+
     async def get_auth_status(self) -> Any:
         self._touch += 1
         return models.AuthStatus(
@@ -627,6 +673,20 @@ async def test_get_message_media_returns_payload() -> None:
     assert response["data"]["kind"] == "photo"
     assert response["data"]["content_url"] == "http://proxy.local/media/token"
     assert response["data"]["url_source"] == "proxy"
+
+
+@pytest.mark.asyncio
+async def test_export_chat_returns_whole_chat_payload() -> None:
+    use_cases = TelegramUseCases(StubReader())
+
+    response = await execute_use_case(use_cases.export_chat, chat_id=1)
+
+    assert response["ok"] is True
+    assert response["data"]["chat"]["id"] == 1
+    assert response["data"]["count"] == 1
+    assert response["data"]["include_media"] is True
+    assert response["data"]["order"] == "asc"
+    assert response["data"]["messages"][0]["media_file"]["content_url"] == "http://proxy.local/media/token"
 
 
 @pytest.mark.asyncio

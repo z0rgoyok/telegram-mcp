@@ -18,6 +18,7 @@ from .serializers import (
     chat_action_result_to_dict,
     chat_activity_summary_to_dict,
     chat_activity_to_dict,
+    chat_export_to_dict,
     chat_ref_to_dict,
     context_to_dict,
     dialog_filter_to_dict,
@@ -599,6 +600,31 @@ class TelegramUseCases:
             message_id=normalized_message_id,
         )
         return success_response(media_file_to_dict(media_file))
+
+    async def export_chat(
+        self,
+        *,
+        chat_id: int | str,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        include_media: bool = True,
+        order: str = "asc",
+    ) -> dict[str, Any]:
+        normalized_chat_id = parse_chat_id(chat_id)
+        time_range = parse_time_range(from_date=from_date, to_date=to_date)
+        normalized_order = parse_order(order)
+
+        chat_export = await self._reader.export_chat(
+            chat_id=normalized_chat_id,
+            time_range=time_range,
+            include_media=bool(include_media),
+            order=normalized_order,
+        )
+
+        payload = chat_export_to_dict(chat_export)
+        payload["include_media"] = bool(include_media)
+        payload["order"] = normalized_order.value
+        return success_response(payload)
 
     async def get_auth_status(self) -> dict[str, Any]:
         status = await self._reader.get_auth_status()

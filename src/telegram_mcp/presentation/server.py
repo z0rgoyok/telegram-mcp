@@ -452,6 +452,26 @@ def create_server(
         return _render_response("get_message_media", payload, response_format)
 
     @mcp.tool()
+    async def export_chat(
+        chat_id: int | str,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        include_media: bool = True,
+        order: str = "asc",
+        response_format: str = "json",
+    ) -> dict[str, Any] | str:
+        """Export one chat as a single JSON payload with optional media URLs."""
+        payload = await execute_use_case(
+            use_cases.export_chat,
+            chat_id=chat_id,
+            from_date=from_date,
+            to_date=to_date,
+            include_media=include_media,
+            order=order,
+        )
+        return _render_response("export_chat", payload, response_format)
+
+    @mcp.tool()
     async def get_auth_status(response_format: str = "json") -> dict[str, Any] | str:
         payload = await execute_use_case(use_cases.get_auth_status)
         return _render_response("get_auth_status", payload, response_format)

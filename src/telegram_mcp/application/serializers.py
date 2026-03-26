@@ -19,6 +19,7 @@ from ..domain.models import (
     MessageContext,
     MessageInfo,
     MessageMedia,
+    MessageReaction,
     ThreadMessages,
 )
 
@@ -118,6 +119,7 @@ def message_to_dict(message: MessageInfo) -> dict[str, Any]:
         "reply_to_message_id": message.reply_to_message_id,
         "is_pinned": message.is_pinned,
         "media": message_media_to_dict(message.media),
+        "reactions": [message_reaction_to_dict(item) for item in message.reactions],
     }
 
 
@@ -133,6 +135,16 @@ def message_media_to_dict(media: MessageMedia | None) -> dict[str, Any] | None:
         "height": media.height,
         "duration_seconds": media.duration_seconds,
         "has_spoiler": media.has_spoiler,
+    }
+
+
+def message_reaction_to_dict(reaction: MessageReaction) -> dict[str, Any]:
+    return {
+        "kind": reaction.kind.value,
+        "count": reaction.count,
+        "chosen": reaction.chosen,
+        "emoji": reaction.emoji,
+        "custom_emoji_id": reaction.custom_emoji_id,
     }
 
 

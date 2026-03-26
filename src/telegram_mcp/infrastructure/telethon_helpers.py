@@ -4,7 +4,7 @@ from collections.abc import Awaitable
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from telethon.tl.types import Channel, Chat, User
+from telethon.tl.types import Channel, Chat, ReactionCustomEmoji, ReactionEmoji, ReactionPaid, User
 from telethon.utils import get_peer_id
 
 from ..domain.errors import ErrorCode, ToolError
@@ -15,6 +15,8 @@ from ..domain.models import (
     MediaKind,
     MessageInfo,
     MessageMedia,
+    MessageReaction,
+    ReactionKind,
     to_utc,
 )
 
@@ -189,6 +191,7 @@ def to_message_info(msg: object, *, default_chat_id: int, default_chat_name: str
     chat_id_obj = msg_payload.chat_id if hasattr(msg_payload, "chat_id") else None
     chat_id = chat_id_obj if isinstance(chat_id_obj, int) else default_chat_id
     raw_pinned = msg_payload.pinned if hasattr(msg_payload, "pinned") else False
+    reactions = extract_message_reactions(msg)
 
     return MessageInfo(
         id=message_id,
@@ -201,6 +204,7 @@ def to_message_info(msg: object, *, default_chat_id: int, default_chat_name: str
         reply_to_message_id=reply_to_message_id,
         is_pinned=bool(raw_pinned),
         media=media,
+        reactions=reactions,
     )
 
 
@@ -231,6 +235,53 @@ def extract_message_media(msg: object) -> MessageMedia | None:
         duration_seconds=_optional_int(duration_obj),
         has_spoiler=bool(spoiler_obj),
     )
+
+
+def extract_message_reactions(msg: object) -> list[MessageReaction]:
+    msg_payload = cast(Any, msg)
+    raw_reactions = msg_payload.reactions if hasattr(msg_payload, "reactions") else None
+    raw_results = (
+        raw_reactions.results if raw_reactions is not None and hasattr(raw_reactions, "results") else None
+    )
+    if not isinstance(raw_results, list):
+        return []
+
+    reactions: list[MessageReaction] = []
+    for item in raw_results:
+        raw_count = item.count if hasattr(item, "count") else None
+        if not isinstance(raw_count, int):
+            continue
+
+        chosen_order = item.chosen_order if hasattr(item, "chosen_order") else None
+        kind, emoji, custom_emoji_id = _parse_reaction_payload(
+            item.reaction if hasattr(item, "reaction") else None
+        )
+        reactions.append(
+            MessageReaction(
+                kind=kind,
+                count=raw_count,
+                chosen=isinstance(chosen_order, int),
+                emoji=emoji,
+                custom_emoji_id=custom_emoji_id,
+            )
+        )
+    return reactions
+
+
+def _parse_reaction_payload(raw_reaction: object) -> tuple[ReactionKind, str | None, int | None]:
+    if isinstance(raw_reaction, ReactionEmoji):
+        return ReactionKind.EMOJI, raw_reaction.emoticon, None
+    if isinstance(raw_reaction, ReactionCustomEmoji):
+        return ReactionKind.CUSTOM_EMOJI, None, raw_reaction.document_id
+    if isinstance(raw_reaction, ReactionPaid):
+        return ReactionKind.PAID, None, None
+
+    payload = cast(Any, raw_reaction)
+    if hasattr(payload, "emoticon") and isinstance(payload.emoticon, str):
+        return ReactionKind.EMOJI, payload.emoticon, None
+    if hasattr(payload, "document_id") and isinstance(payload.document_id, int):
+        return ReactionKind.CUSTOM_EMOJI, None, payload.document_id
+    return ReactionKind.UNKNOWN, None, None
 
 
 def _detect_media_kind(msg: object) -> MediaKind:

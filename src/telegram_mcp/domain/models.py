@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Generic, TypeVar
@@ -45,6 +45,13 @@ class MediaKind(str, Enum):
 class MediaUrlSource(str, Enum):
     TELEGRAM = "telegram"
     PROXY = "proxy"
+
+
+class ReactionKind(str, Enum):
+    EMOJI = "emoji"
+    CUSTOM_EMOJI = "custom_emoji"
+    PAID = "paid"
+    UNKNOWN = "unknown"
 
 
 def to_utc(value: datetime) -> datetime:
@@ -133,6 +140,7 @@ class MessageInfo:
     reply_to_message_id: int | None = None
     is_pinned: bool = False
     media: MessageMedia | None = None
+    reactions: list[MessageReaction] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +153,15 @@ class MessageMedia:
     height: int | None = None
     duration_seconds: int | None = None
     has_spoiler: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MessageReaction:
+    kind: ReactionKind
+    count: int
+    chosen: bool = False
+    emoji: str | None = None
+    custom_emoji_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

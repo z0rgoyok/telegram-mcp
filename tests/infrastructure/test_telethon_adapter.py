@@ -80,6 +80,7 @@ class FakeMessage:
     sticker: object | None = None
     gif: object | None = None
     document: object | None = None
+    reactions: object | None = None
 
 
 @dataclass
@@ -220,7 +221,8 @@ class FakeClient:
             return self.entities[chat_id]
         raise ValueError("Entity not found")
 
-    async def get_input_entity(self, entity: Any) -> Any:
+    @staticmethod
+    async def get_input_entity(entity: Any) -> Any:
         if isinstance(entity, types.Channel):
             return types.InputPeerChannel(channel_id=entity.id, access_hash=entity.access_hash or 0)
         if isinstance(entity, types.Chat):
@@ -654,6 +656,35 @@ async def test_get_messages_includes_media_metadata(adapter: Any) -> None:
     assert media.mime_type == "image/jpeg"
     assert media.file_name == "photo.jpg"
     assert media.size_bytes == 4
+
+
+@pytest.mark.asyncio
+async def test_get_messages_includes_reactions(adapter: Any) -> None:
+    message = next(item for item in adapter._client.messages[1] if item.id == 14)
+    message.reactions = types.MessageReactions(
+        results=[
+            types.ReactionCount(
+                reaction=types.ReactionEmoji(emoticon="👍"),
+                count=2,
+                chosen_order=0,
+            ),
+            types.ReactionCount(
+                reaction=types.ReactionCustomEmoji(document_id=777),
+                count=1,
+            ),
+        ]
+    )
+
+    page = await adapter.get_messages(chat_id=1, limit=10)
+
+    target = next(item for item in page.items if item.id == 14)
+    assert target.reactions[0].kind.value == "emoji"
+    assert target.reactions[0].emoji == "👍"
+    assert target.reactions[0].count == 2
+    assert target.reactions[0].chosen is True
+    assert target.reactions[1].kind.value == "custom_emoji"
+    assert target.reactions[1].custom_emoji_id == 777
+    assert target.reactions[1].count == 1
 
 
 @pytest.mark.asyncio

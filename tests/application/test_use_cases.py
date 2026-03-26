@@ -203,6 +203,14 @@ class StubReader:
                     text="hello",
                     chat_id=1,
                     chat_name="Engineering",
+                    reactions=[
+                        models.MessageReaction(
+                            kind=models.ReactionKind.EMOJI,
+                            count=3,
+                            chosen=True,
+                            emoji="🔥",
+                        )
+                    ],
                 )
             ],
             has_more=True,
@@ -424,6 +432,15 @@ async def test_get_messages_returns_cursor_and_utc_iso_dates() -> None:
     assert response["meta"]["has_more"] is True
     assert decode_message_cursor(response["meta"]["cursor"]) == 99
     assert response["data"]["items"][0]["date"].endswith("Z")
+    assert response["data"]["items"][0]["reactions"] == [
+        {
+            "kind": "emoji",
+            "count": 3,
+            "chosen": True,
+            "emoji": "🔥",
+            "custom_emoji_id": None,
+        }
+    ]
 
 
 @pytest.mark.asyncio

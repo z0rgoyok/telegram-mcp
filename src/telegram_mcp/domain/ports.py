@@ -13,6 +13,7 @@ from .models import (
     ChatRef,
     ChatSnapshot,
     DialogFilterInfo,
+    ExportFile,
     HealthStatus,
     MediaFile,
     MediaKind,
@@ -244,4 +245,16 @@ class TelegramReader(ABC):
 
     @abstractmethod
     async def health_check(self) -> HealthStatus:
+        raise NotImplementedError
+
+
+class ChatExportWriter(ABC):
+    @abstractmethod
+    async def write_export_file(
+        self,
+        *,
+        chat_id: int,
+        chat_name: str,
+        content: bytes,
+    ) -> ExportFile:
         raise NotImplementedError

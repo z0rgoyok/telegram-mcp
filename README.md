@@ -81,7 +81,7 @@ For tool errors:
 - `list_chat_activity_summary`: Combined per-chat activity: my messages, mentions, unread count.
 - `get_chat_snapshot`: Quick chat snapshot (`recent_messages`, optional `pinned_messages`).
 - `get_message_media`: Return message attachment URL (Telegram URL or signed HTTP proxy).
-- `export_chat`: Export one whole chat as a single JSON payload, optionally enriched with media URLs.
+- `export_chat`: Export one whole chat into an in-memory JSON file and return a signed download URL, optionally enriched with media URLs.
 - `get_auth_status`: Read-only Telegram auth status.
 - `health_check`: Service/provider health diagnostics.
 

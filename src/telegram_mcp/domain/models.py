@@ -177,6 +177,14 @@ class MediaFile:
 
 
 @dataclass(frozen=True, slots=True)
+class ExportFile:
+    content_url: str
+    file_name: str
+    mime_type: str
+    size_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
 class ExportedMessage:
     message: MessageInfo
     media_file: MediaFile | None = None

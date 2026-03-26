@@ -16,6 +16,11 @@ class MediaProxyTarget:
     message_id: int
 
 
+@dataclass(frozen=True, slots=True)
+class ExportProxyTarget:
+    export_id: str
+
+
 def extract_direct_media_url(message: object) -> str | None:
     message_payload = cast(Any, message)
     file_ref = message_payload.file if hasattr(message_payload, "file") else None
@@ -43,16 +48,12 @@ def build_proxy_media_url(
 ) -> str:
     issued_at = now or datetime.now(UTC)
     expires_at = int((issued_at + timedelta(seconds=ttl_seconds)).timestamp())
-    payload = {
-        "c": chat_id,
-        "m": message_id,
-        "e": expires_at,
-    }
-    serialized_payload = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    payload_token = _urlsafe_b64encode(serialized_payload)
-    signature = _urlsafe_b64encode(_sign_payload(payload_token, secret))
-    token = f"{payload_token}.{signature}"
-    return f"{base_url}/media/{quote(token, safe='')}"
+    return _build_signed_proxy_url(
+        base_url=base_url,
+        route="media",
+        payload={"c": chat_id, "m": message_id, "e": expires_at},
+        secret=secret,
+    )
 
 
 def parse_proxy_media_token(
@@ -79,6 +80,63 @@ def parse_proxy_media_token(
         raise ValueError("Media token expired")
 
     return MediaProxyTarget(chat_id=chat_id, message_id=message_id)
+
+
+def build_proxy_export_url(
+    *,
+    base_url: str,
+    export_id: str,
+    secret: str,
+    ttl_seconds: int,
+    now: datetime | None = None,
+) -> str:
+    issued_at = now or datetime.now(UTC)
+    expires_at = int((issued_at + timedelta(seconds=ttl_seconds)).timestamp())
+    return _build_signed_proxy_url(
+        base_url=base_url,
+        route="exports",
+        payload={"e": expires_at, "x": export_id},
+        secret=secret,
+    )
+
+
+def _build_signed_proxy_url(
+    *,
+    base_url: str,
+    route: str,
+    payload: dict[str, int | str],
+    secret: str,
+) -> str:
+    serialized_payload = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    payload_token = _urlsafe_b64encode(serialized_payload)
+    signature = _urlsafe_b64encode(_sign_payload(payload_token, secret))
+    token = f"{payload_token}.{signature}"
+    return f"{base_url}/{route}/{quote(token, safe='')}"
+
+
+def parse_proxy_export_token(
+    token: str,
+    *,
+    secret: str,
+    now: datetime | None = None,
+) -> ExportProxyTarget:
+    payload_token, signature_token = _split_token(token)
+    expected_signature = _urlsafe_b64encode(_sign_payload(payload_token, secret))
+    if not hmac.compare_digest(signature_token, expected_signature):
+        raise ValueError("Invalid export token signature")
+
+    payload_raw = _urlsafe_b64decode(payload_token)
+    payload = json.loads(payload_raw.decode("utf-8"))
+    export_id = payload.get("x")
+    expires_at = payload.get("e")
+    if not isinstance(export_id, str) or not export_id or not isinstance(expires_at, int):
+        raise ValueError("Invalid export token payload")
+
+    current_ts = int((now or datetime.now(UTC)).timestamp())
+    if expires_at < current_ts:
+        raise ValueError("Export token expired")
+
+    return ExportProxyTarget(export_id=export_id)
 
 
 def _sign_payload(payload_token: str, secret: str) -> bytes:

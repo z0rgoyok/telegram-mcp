@@ -15,6 +15,7 @@ from ..domain.models import (
     ChatSnapshot,
     DialogFilterInfo,
     ExportedMessage,
+    ExportFile,
     HealthStatus,
     MediaFile,
     MentionChatActivity,
@@ -160,6 +161,15 @@ def media_file_to_dict(media_file: MediaFile) -> dict[str, Any]:
         "size_bytes": media_file.size_bytes,
         "content_url": media_file.content_url,
         "url_source": media_file.url_source.value,
+    }
+
+
+def export_file_to_dict(export_file: ExportFile) -> dict[str, Any]:
+    return {
+        "content_url": export_file.content_url,
+        "file_name": export_file.file_name,
+        "mime_type": export_file.mime_type,
+        "size_bytes": export_file.size_bytes,
     }
 
 

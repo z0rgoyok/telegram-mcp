@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from ..domain.errors import ErrorCode, ToolError
 from ..domain.models import MediaKind, TimeRange
-from ..domain.ports import TelegramReader
+from ..domain.ports import ChatExportWriter, TelegramReader
 from .cursor import (
     decode_message_cursor,
     decode_offset_cursor,
@@ -19,9 +20,11 @@ from .serializers import (
     chat_activity_summary_to_dict,
     chat_activity_to_dict,
     chat_export_to_dict,
+    chat_info_to_dict,
     chat_ref_to_dict,
     context_to_dict,
     dialog_filter_to_dict,
+    export_file_to_dict,
     health_to_dict,
     media_file_to_dict,
     mention_chat_activity_to_dict,
@@ -42,8 +45,13 @@ from .validators import (
 
 
 class TelegramUseCases:
-    def __init__(self, reader: TelegramReader) -> None:
+    def __init__(
+        self,
+        reader: TelegramReader,
+        chat_export_writer: ChatExportWriter | None = None,
+    ) -> None:
         self._reader = reader
+        self._chat_export_writer = chat_export_writer
 
     @staticmethod
     def _parse_required_from_date_page(
@@ -621,7 +629,25 @@ class TelegramUseCases:
             order=normalized_order,
         )
 
-        payload = chat_export_to_dict(chat_export)
+        if self._chat_export_writer is None:
+            raise ToolError(
+                ErrorCode.PROVIDER_ERROR,
+                "chat export writer is not configured",
+            )
+
+        export_payload = chat_export_to_dict(chat_export)
+        export_payload["include_media"] = bool(include_media)
+        export_payload["order"] = normalized_order.value
+        export_content = json.dumps(export_payload, ensure_ascii=False, indent=2).encode("utf-8")
+        export_file = await self._chat_export_writer.write_export_file(
+            chat_id=chat_export.chat.id,
+            chat_name=chat_export.chat.name,
+            content=export_content,
+        )
+
+        payload = export_file_to_dict(export_file)
+        payload["chat"] = chat_info_to_dict(chat_export.chat)
+        payload["count"] = len(chat_export.messages)
         payload["include_media"] = bool(include_media)
         payload["order"] = normalized_order.value
         return success_response(payload)

@@ -14,6 +14,7 @@ from ..application.use_cases import TelegramUseCases
 from ..domain.errors import ErrorCode, ToolError
 from ..domain.ports import TelegramReader
 from ..infrastructure.config import Settings
+from ..infrastructure.in_memory_chat_export_store import InMemoryChatExportStore
 from ..infrastructure.telethon_adapter import TelethonAdapter
 from .formatters import format_markdown
 from .media_proxy_server import MediaProxyServer
@@ -68,10 +69,11 @@ def create_server(
 ) -> FastMCP:
     settings = Settings.from_env()
     adapter_impl = TelethonAdapter(settings)
-    media_proxy = MediaProxyServer(adapter_impl.raw_client, settings)
+    export_store = InMemoryChatExportStore(settings)
+    media_proxy = MediaProxyServer(adapter_impl.raw_client, settings, export_store)
     shared_runtime = _SharedSessionRuntime(adapter_impl, media_proxy)
     reader: TelegramReader = adapter_impl
-    use_cases = TelegramUseCases(reader)
+    use_cases = TelegramUseCases(reader, export_store)
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[None]:
@@ -460,7 +462,7 @@ def create_server(
         order: str = "asc",
         response_format: str = "json",
     ) -> dict[str, Any] | str:
-        """Export one chat as a single JSON payload with optional media URLs."""
+        """Export one chat into an in-memory JSON file and return a signed download URL."""
         payload = await execute_use_case(
             use_cases.export_chat,
             chat_id=chat_id,

@@ -7,20 +7,28 @@ from aiohttp import web
 from telethon import TelegramClient
 
 from ..infrastructure.config import Settings
-from ..infrastructure.media_proxy import parse_proxy_media_token
+from ..infrastructure.in_memory_chat_export_store import InMemoryChatExportStore
+from ..infrastructure.media_proxy import parse_proxy_export_token, parse_proxy_media_token
 from ..infrastructure.telethon_helpers import extract_message_media
 
 logger = logging.getLogger(__name__)
 
 
 class MediaProxyServer:
-    def __init__(self, client: TelegramClient, settings: Settings) -> None:
+    def __init__(
+        self,
+        client: TelegramClient,
+        settings: Settings,
+        export_store: InMemoryChatExportStore,
+    ) -> None:
         self._client = client
         self._settings = settings
+        self._export_store = export_store
         self._runner: web.AppRunner | None = None
         self._site: web.BaseSite | None = None
         self._app = web.Application()
         self._app.router.add_get("/media/{token}", self._download_media)
+        self._app.router.add_get("/exports/{token}", self._download_export)
 
     async def start(self) -> None:
         if self._runner is not None:
@@ -97,6 +105,29 @@ class MediaProxyServer:
                 extra={"chat_id": target.chat_id, "message_id": target.message_id},
             )
             return web.Response(status=502, text=f"Telegram provider error: {exc}")
+
+    async def _download_export(self, request: web.Request) -> web.StreamResponse:
+        token = request.match_info.get("token", "")
+        try:
+            target = parse_proxy_export_token(
+                token,
+                secret=self._settings.media_proxy_token_secret,
+            )
+        except ValueError as exc:
+            if "expired" in str(exc).casefold():
+                raise web.HTTPGone(text="Export URL expired") from exc
+            raise web.HTTPNotFound(text="Invalid export URL") from exc
+
+        stored_export = await self._export_store.get_export(target.export_id)
+        if stored_export is None:
+            raise web.HTTPNotFound(text="Export file not found")
+
+        headers = {
+            "Cache-Control": "private, max-age=300",
+            "Content-Type": stored_export.mime_type,
+            "Content-Disposition": f'attachment; filename="{_safe_header_filename(stored_export.file_name)}"',
+        }
+        return web.Response(body=stored_export.content, headers=headers)
 
 
 def _safe_header_filename(file_name: str) -> str:

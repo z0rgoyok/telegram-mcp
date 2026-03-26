@@ -458,6 +458,26 @@ class StubReader:
         return models.HealthStatus(status="ok", connected=True, authorized=True)
 
 
+class StubChatExportWriter:
+    async def write_export_file(
+        self,
+        *,
+        chat_id: int,
+        chat_name: str,
+        content: bytes,
+    ) -> Any:
+        assert chat_id == 1
+        assert chat_name == "Engineering"
+        assert b'"include_media": true' in content
+        assert b'"order": "asc"' in content
+        return models.ExportFile(
+            content_url="http://proxy.local/exports/token",
+            file_name="engineering-1.json",
+            mime_type="application/json",
+            size_bytes=len(content),
+        )
+
+
 @pytest.mark.asyncio
 async def test_search_messages_empty_query_is_treated_as_wildcard() -> None:
     use_cases = TelegramUseCases(StubReader())
@@ -677,7 +697,7 @@ async def test_get_message_media_returns_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_export_chat_returns_whole_chat_payload() -> None:
-    use_cases = TelegramUseCases(StubReader())
+    use_cases = TelegramUseCases(StubReader(), StubChatExportWriter())
 
     response = await execute_use_case(use_cases.export_chat, chat_id=1)
 
@@ -686,7 +706,9 @@ async def test_export_chat_returns_whole_chat_payload() -> None:
     assert response["data"]["count"] == 1
     assert response["data"]["include_media"] is True
     assert response["data"]["order"] == "asc"
-    assert response["data"]["messages"][0]["media_file"]["content_url"] == "http://proxy.local/media/token"
+    assert response["data"]["content_url"] == "http://proxy.local/exports/token"
+    assert response["data"]["file_name"] == "engineering-1.json"
+    assert response["data"]["mime_type"] == "application/json"
 
 
 @pytest.mark.asyncio

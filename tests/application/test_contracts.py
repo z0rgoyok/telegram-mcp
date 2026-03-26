@@ -382,6 +382,23 @@ class ContractReader:
         return models.HealthStatus(status="ok", connected=True, authorized=True)
 
 
+class ContractChatExportWriter:
+    async def write_export_file(
+        self,
+        *,
+        chat_id: int,
+        chat_name: str,
+        content: bytes,
+    ) -> Any:
+        _ = (chat_id, chat_name, content)
+        return models.ExportFile(
+            content_url="http://proxy.local/exports/token",
+            file_name="a-1.json",
+            mime_type="application/json",
+            size_bytes=128,
+        )
+
+
 async def _expect_ok(payload: dict[str, object]) -> None:
     assert payload["ok"] is True
     assert "data" in payload
@@ -391,7 +408,7 @@ async def _expect_ok(payload: dict[str, object]) -> None:
 
 @pytest.mark.asyncio
 async def test_json_contract_for_all_tools() -> None:
-    use_cases = TelegramUseCases(ContractReader())
+    use_cases = TelegramUseCases(ContractReader(), ContractChatExportWriter())
 
     responses = [
         await execute_use_case(use_cases.resolve_chat, query="A"),

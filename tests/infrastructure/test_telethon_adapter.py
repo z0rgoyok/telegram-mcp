@@ -99,6 +99,7 @@ class FakeClient:
         self._authorized = True
         self.leave_channel_requests: list[int] = []
         self.deleted_dialogs: list[int] = []
+        self.iterated_message_ids: list[int] = []
 
         self.entities = {
             1: SimpleNamespace(id=1, title="Engineering", username="eng"),
@@ -298,6 +299,7 @@ class FakeClient:
 
         limit = int(kwargs.get("limit", len(pool)))
         for message in pool[:limit]:
+            self.iterated_message_ids.append(message.id)
             yield message
 
     async def __call__(self, request: Any) -> Any:
@@ -377,12 +379,12 @@ class FakeClient:
 
 
 @pytest.fixture
-def adapter() -> Any:
+def adapter(tmp_path: Path) -> Any:
     settings = Settings(
         api_id=1,
         api_hash="hash",
         phone="+10000000000",
-        session_path=Path("var/telegram"),
+        session_path=tmp_path / "telegram-test",
         dialog_scan_limit=100,
         media_download_limit_bytes=1024,
         media_proxy_host="0.0.0.0",
@@ -718,3 +720,19 @@ async def test_export_chat_returns_full_chat_with_media_urls(adapter: Any) -> No
     assert chat_export.messages[-1].message.id == 23
     assert chat_export.messages[-1].media_file is not None
     assert chat_export.messages[-1].media_file.content_url.startswith("http://proxy.test/media/")
+
+
+@pytest.mark.asyncio
+async def test_export_chat_stops_scanning_after_from_date(adapter: Any) -> None:
+    chat_export = await adapter.export_chat(
+        chat_id=1,
+        time_range=TimeRange(
+            from_date=datetime(2026, 1, 2, 0, 0, tzinfo=timezone.utc),
+            to_date=datetime(2026, 1, 4, 23, 59, tzinfo=timezone.utc),
+        ),
+        include_media=False,
+        order=MessageOrder.ASC,
+    )
+
+    assert [item.message.id for item in chat_export.messages] == [12, 13, 14, 15]
+    assert adapter._client.iterated_message_ids == [15, 14, 13, 12, 11]

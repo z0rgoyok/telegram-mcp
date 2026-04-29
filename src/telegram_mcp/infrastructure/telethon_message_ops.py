@@ -729,6 +729,8 @@ async def export_chat(
             default_chat_id=default_chat_id,
             default_chat_name=chat_name,
         )
+        if time_range and time_range.from_date and parsed.date < time_range.from_date:
+            break
         if time_range and not time_range.contains(parsed.date):
             continue
 
